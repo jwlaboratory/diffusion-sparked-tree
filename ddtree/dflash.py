@@ -58,6 +58,8 @@ def dflash_generate(
         target_hidden = extract_context_feature(output.hidden_states, model.target_layer_ids)
         # is this getting the hidedn states of the target model
 
+    # so in the prefill we bascially extracted the hidden states of the target
+
     time_to_first_token = cuda_time() - prefill_start
 
     decode_start = cuda_time()
@@ -87,7 +89,7 @@ def dflash_generate(
                 use_cache=True,
                 is_causal=False, #non casual bc diffusion
             )[:, -block_size + 1 :, :])
-            past_key_values_draft.crop(start) #crop out the GUESSES . GO back to teh START (KNOWN VERIFIED ) 
+            past_key_values_draft.crop(start) #crop out the GUESSES . GO back to teh START (KNOWN VERIFIED )  
             block_output_ids[:, 1:] = sample(draft_logits) #sample the outputs
             draft_stage_elapsed = cuda_time() - draft_stage_start
             if draft_prefill:
@@ -97,13 +99,16 @@ def dflash_generate(
                 stage_times["draft"] += draft_stage_elapsed
 
 
-        # verify start
+        # the drafter is using target hidden states as the KV. for each new token it creates, it appends its OWN KV. but this is a surrogate.
+        # when its next round, it crops All of its guesses kv, cos we want the real kv from the hidden states post verify .
 
+
+        # verify start
         # The targets KV is only used for verify. its never used for drafting
 
         verify_stage_start = cuda_time()
         output = target(
-            block_output_ids,
+            block_output_ids, #"block_output_ids is telling it over what range to do a "prefill" over 
             position_ids=block_position_ids,
             past_key_values=past_key_values_target,
             use_cache=True,
@@ -112,16 +117,19 @@ def dflash_generate(
         stage_times["verify"] += cuda_time() - verify_stage_start
 
         commit_stage_start = cuda_time()
-        posterior = sample(output.logits, temperature)
-        acceptance_length = (block_output_ids[:, 1:] == posterior[:, :-1]).cumprod(dim=1).sum(dim=1)[0].item()
+        posterior = sample(output.logits, temperature) #sample from it 
+        acceptance_length = (block_output_ids[:, 1:] == posterior[:, :-1]).cumprod(dim=1).sum(dim=1)[0].item() #figure out acceptance length
         output_ids[:, start : start + acceptance_length + 1] = block_output_ids[:, : acceptance_length + 1]
         output_ids[:, start + acceptance_length + 1] = posterior[:, acceptance_length]
+        # add the extra free token
 
         acceptance_lengths.append(acceptance_length + 1)
         start += acceptance_length + 1
         past_key_values_target.crop(start)
+        # crop the old key values
         if block_size > 1:
             target_hidden = extract_context_feature(output.hidden_states, model.target_layer_ids)[:, : acceptance_length + 1, :]
+            #extract new hidden states
         stage_times["commit"] += cuda_time() - commit_stage_start
         round_timestamps.append(cuda_time() - round_clock_start)
 
