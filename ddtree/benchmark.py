@@ -22,6 +22,12 @@ def main() -> None:
     parser.add_argument("--model-name-or-path", type=str, required=True)
     parser.add_argument("--draft-name-or-path", type=str, required=True)
     parser.add_argument("--dspark-name-or-path", type=str, default=None, help="e.g. deepseek-ai/dspark_qwen3_4b_block7; enables the dspark method")
+    parser.add_argument("--minimal", action="store_true", help="only baseline/dflash/dspark/ddtree/sparked-tree (skip nomkv, wave, xmkv ablations)")
+    parser.add_argument("--collect-tree-stats", action="store_true", help="record (depth, slot) of every accepted node for width-schedule tuning")
+    parser.add_argument("--tree-mode", type=str, default="exact", choices=["exact", "beam"], help="markov tree builder: best-first (exact) or level-synchronous beam")
+    parser.add_argument("--beam-widths", type=str, default=None, help="explicit beam width per depth, e.g. 2,3,7,7,5 (overrides --beam-decay)")
+    parser.add_argument("--beam-decay", type=float, default=0.6, help="beam width decay per depth")
+    parser.add_argument("--tree-candidates", type=int, default=2048, help="markov tree: restrict per-depth candidates before applying bias; 0 = full vocab")
     parser.add_argument("--confidence-threshold", type=float, default=0.0, help="DSpark confidence head threshold; 0 disables proposal truncation")
     parser.add_argument("--block-size", type=int, default=None)
     parser.add_argument("--tree-budget", type=str, default="16,32,64,128,256,512,1024")
@@ -98,13 +104,21 @@ def main() -> None:
         if not args.flash_attn:
             # dspark-drafter trees: independence-assumed ablation vs markov-guided
             for tree_budget in tree_budgets:
-                methods_to_run.append(f"dsparktree_nomkv_tb{tree_budget}")
-                method_key_to_tree_budget[f"dsparktree_nomkv_tb{tree_budget}"] = tree_budget
                 methods_to_run.append(f"dsparktree_markov_tb{tree_budget}")
                 method_key_to_tree_budget[f"dsparktree_markov_tb{tree_budget}"] = tree_budget
+                if args.minimal:
+                    continue
+                methods_to_run.append(f"dsparktree_nomkv_tb{tree_budget}")
+                method_key_to_tree_budget[f"dsparktree_nomkv_tb{tree_budget}"] = tree_budget
+                # same tree scoring, batched-sync builder (~7x fewer GPU syncs)
+                methods_to_run.append(f"dsparktree_wave_tb{tree_budget}")
+                method_key_to_tree_budget[f"dsparktree_wave_tb{tree_budget}"] = tree_budget
                 # DDTree proper (DFlash drafter, full horizon) + DSpark's markov head as guidance
                 methods_to_run.append(f"ddtree_xmkv_tb{tree_budget}")
                 method_key_to_tree_budget[f"ddtree_xmkv_tb{tree_budget}"] = tree_budget
+
+    beam_flat = args.beam_widths == "flat"
+    beam_widths = None if (not args.beam_widths or beam_flat) else [int(w) for w in args.beam_widths.split(",")]
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     dataset = load_and_process_dataset(args.dataset)
@@ -177,7 +191,13 @@ def main() -> None:
                 stop_token_ids=[tokenizer.eos_token_id],
                 temperature=args.temperature,
                 tree_budget=method_key_to_tree_budget[method_key],
-                use_markov="markov" in method_key,
+                use_markov=("markov" in method_key) or ("wave" in method_key),
+                tree_exact="wave" not in method_key,
+                tree_candidates=args.tree_candidates,
+                tree_mode=args.tree_mode,
+                beam_decay=args.beam_decay,
+                beam_widths=beam_widths,
+                beam_flat=beam_flat,
             )
         else:
             _ = ddtree_generate(
@@ -264,7 +284,14 @@ def main() -> None:
                         stop_token_ids=[tokenizer.eos_token_id],
                         temperature=args.temperature,
                         tree_budget=method_key_to_tree_budget[method_key],
-                        use_markov="markov" in method_key,
+                        use_markov=("markov" in method_key) or ("wave" in method_key),
+                        tree_exact="wave" not in method_key,
+                        tree_candidates=args.tree_candidates,
+                        tree_mode=args.tree_mode,
+                        beam_decay=args.beam_decay,
+                        beam_widths=beam_widths,
+                        beam_flat=beam_flat,
+                        collect_stats=args.collect_tree_stats,
                     )
                 else:
                     response[method_key] = ddtree_generate(
