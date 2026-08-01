@@ -126,7 +126,8 @@ def dflash_generate(
         acceptance_lengths.append(acceptance_length + 1)
         start += acceptance_length + 1
         past_key_values_target.crop(start)
-        # crop the old key values
+        # crop the old key values , but keep the ones that are verified earlier
+        
         if block_size > 1:
             target_hidden = extract_context_feature(output.hidden_states, model.target_layer_ids)[:, : acceptance_length + 1, :]
             #extract new hidden states

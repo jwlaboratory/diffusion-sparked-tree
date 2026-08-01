@@ -305,11 +305,13 @@ def ddtree_generate(
     num_input_tokens = input_ids.shape[1]
     max_length = num_input_tokens + max_new_tokens
     draft_horizon = block_size - 1
+
+    # adds a draft_horizon and max tree budget of max nodes to create
     tree_budget = draft_horizon if tree_budget is None else max(tree_budget, 0)
     max_tree_nodes = 1 + tree_budget
 
     output_ids = torch.full(
-        (1, max_length + max_tree_nodes),
+        (1, max_length + max_tree_nodes), #max mask size if it went all down one path
         mask_token_id,
         dtype=torch.long,
         device=model.device,

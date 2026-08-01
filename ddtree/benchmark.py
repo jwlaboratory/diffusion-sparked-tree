@@ -10,15 +10,19 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import distributed as dist
-from model import DFlashDraftModel, load_and_process_dataset
+from model import DFlashDraftModel, DSparkDraftModel, load_and_process_dataset
 from dflash import dflash_generate
 from ddtree import ddtree_generate, maybe_enable_cpp_compact
+from dspark import dspark_generate
+from ddtree_markov import ddtree_markov_generate, ddtree_cross_markov_generate
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name-or-path", type=str, required=True)
     parser.add_argument("--draft-name-or-path", type=str, required=True)
+    parser.add_argument("--dspark-name-or-path", type=str, default=None, help="e.g. deepseek-ai/dspark_qwen3_4b_block7; enables the dspark method")
+    parser.add_argument("--confidence-threshold", type=float, default=0.0, help="DSpark confidence head threshold; 0 disables proposal truncation")
     parser.add_argument("--block-size", type=int, default=None)
     parser.add_argument("--tree-budget", type=str, default="16,32,64,128,256,512,1024")
     parser.add_argument("--dataset", type=str, required=True)
@@ -50,11 +54,13 @@ def main() -> None:
             return False
 
     installed_flash_attn = has_flash_attn()
-    if not installed_flash_attn:
-        raise RuntimeError("flash_attn must be installed because the draft DFlash model always uses FlashAttention")
-
     target_attn_implementation = "flash_attention_2" if args.flash_attn else "sdpa"
     draft_attn_implementation = "flash_attention_2"
+    if not installed_flash_attn:
+        if args.flash_attn:
+            raise RuntimeError("--flash-attn requested but flash_attn is not installed")
+        logger.warning("flash_attn not installed; draft models fall back to sdpa (slower draft stage, same outputs).")
+        draft_attn_implementation = "sdpa"
 
     if not args.flash_attn and installed_flash_attn:
         logger.warning("DDTree uses a custom tree attention mask on the target model. For compatibility, forcing the target verifier to torch.sdpa.")
@@ -71,6 +77,14 @@ def main() -> None:
         dtype=torch.bfloat16,
     ).to(device).eval()
 
+    dspark_model = None
+    if args.dspark_name_or_path is not None:
+        dspark_model = DSparkDraftModel.from_pretrained(
+            args.dspark_name_or_path,
+            attn_implementation=draft_attn_implementation,
+            dtype=torch.bfloat16,
+        ).to(device).eval()
+
     block_size = args.block_size if args.block_size is not None else draft_model.block_size
     tree_budgets = [int(tree_budget) for tree_budget in args.tree_budget.split(",")]
     methods_to_run = ["dflash"]
@@ -79,6 +93,18 @@ def main() -> None:
         ddtree_method_keys = [f"ddtree_tb{tree_budget}" for tree_budget in tree_budgets]
         methods_to_run.extend(ddtree_method_keys)
         method_key_to_tree_budget.update({f"ddtree_tb{tree_budget}": tree_budget for tree_budget in tree_budgets})
+    if dspark_model is not None:
+        methods_to_run.append("dspark")
+        if not args.flash_attn:
+            # dspark-drafter trees: independence-assumed ablation vs markov-guided
+            for tree_budget in tree_budgets:
+                methods_to_run.append(f"dsparktree_nomkv_tb{tree_budget}")
+                method_key_to_tree_budget[f"dsparktree_nomkv_tb{tree_budget}"] = tree_budget
+                methods_to_run.append(f"dsparktree_markov_tb{tree_budget}")
+                method_key_to_tree_budget[f"dsparktree_markov_tb{tree_budget}"] = tree_budget
+                # DDTree proper (DFlash drafter, full horizon) + DSpark's markov head as guidance
+                methods_to_run.append(f"ddtree_xmkv_tb{tree_budget}")
+                method_key_to_tree_budget[f"ddtree_xmkv_tb{tree_budget}"] = tree_budget
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     dataset = load_and_process_dataset(args.dataset)
@@ -116,6 +142,42 @@ def main() -> None:
                 block_size=block_size,
                 stop_token_ids=[tokenizer.eos_token_id],
                 temperature=args.temperature,
+            )
+        elif method_key == "dspark":
+            _ = dspark_generate(
+                model=dspark_model,
+                target=target,
+                input_ids=warmup_input_ids,
+                max_new_tokens=warmup_max_new_tokens,
+                block_size=dspark_model.block_size,
+                stop_token_ids=[tokenizer.eos_token_id],
+                temperature=args.temperature,
+                confidence_threshold=args.confidence_threshold,
+            )
+        elif method_key.startswith("ddtree_xmkv_"):
+            _ = ddtree_cross_markov_generate(
+                model=draft_model,
+                markov_head=dspark_model.markov_head,
+                target=target,
+                input_ids=warmup_input_ids,
+                mask_token_id=draft_model.mask_token_id,
+                max_new_tokens=warmup_max_new_tokens,
+                block_size=block_size,
+                stop_token_ids=[tokenizer.eos_token_id],
+                temperature=args.temperature,
+                tree_budget=method_key_to_tree_budget[method_key],
+            )
+        elif method_key.startswith("dsparktree_"):
+            _ = ddtree_markov_generate(
+                model=dspark_model,
+                target=target,
+                input_ids=warmup_input_ids,
+                max_new_tokens=warmup_max_new_tokens,
+                block_size=dspark_model.block_size,
+                stop_token_ids=[tokenizer.eos_token_id],
+                temperature=args.temperature,
+                tree_budget=method_key_to_tree_budget[method_key],
+                use_markov="markov" in method_key,
             )
         else:
             _ = ddtree_generate(
@@ -167,6 +229,42 @@ def main() -> None:
                         block_size=block_size,
                         stop_token_ids=[tokenizer.eos_token_id],
                         temperature=args.temperature,
+                    )
+                elif method_key == "dspark":
+                    response[method_key] = dspark_generate(
+                        model=dspark_model,
+                        target=target,
+                        input_ids=input_ids,
+                        max_new_tokens=args.max_new_tokens,
+                        block_size=dspark_model.block_size,
+                        stop_token_ids=[tokenizer.eos_token_id],
+                        temperature=args.temperature,
+                        confidence_threshold=args.confidence_threshold,
+                    )
+                elif method_key.startswith("ddtree_xmkv_"):
+                    response[method_key] = ddtree_cross_markov_generate(
+                        model=draft_model,
+                        markov_head=dspark_model.markov_head,
+                        target=target,
+                        input_ids=input_ids,
+                        mask_token_id=draft_model.mask_token_id,
+                        max_new_tokens=args.max_new_tokens,
+                        block_size=block_size,
+                        stop_token_ids=[tokenizer.eos_token_id],
+                        temperature=args.temperature,
+                        tree_budget=method_key_to_tree_budget[method_key],
+                    )
+                elif method_key.startswith("dsparktree_"):
+                    response[method_key] = ddtree_markov_generate(
+                        model=dspark_model,
+                        target=target,
+                        input_ids=input_ids,
+                        max_new_tokens=args.max_new_tokens,
+                        block_size=dspark_model.block_size,
+                        stop_token_ids=[tokenizer.eos_token_id],
+                        temperature=args.temperature,
+                        tree_budget=method_key_to_tree_budget[method_key],
+                        use_markov="markov" in method_key,
                     )
                 else:
                     response[method_key] = ddtree_generate(
