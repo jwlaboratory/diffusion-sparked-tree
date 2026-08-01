@@ -20,6 +20,7 @@ Fetch saved results later:
     modal volume get ddtree-hf-cache results/<file>.json .
 """
 
+import os
 from pathlib import Path
 
 import modal
@@ -44,6 +45,10 @@ image = (
 )
 
 hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
+
+# GPU tier is env-selectable so the SAME checkpoints can be benchmarked on
+# different hardware, isolating the memory-bandwidth effect from model effects.
+GPU = os.environ.get("DDTREE_GPU", "A10G")
 
 TARGET = "Qwen/Qwen3-4B"
 DFLASH_DRAFT = "z-lab/Qwen3-4B-DFlash-b16"
@@ -111,7 +116,7 @@ def _print_summary(dataset: str, summary: dict) -> None:
         print(f"  {method:28s} {stages}")
 
 
-@app.function(image=image, gpu="A10G", timeout=10800, volumes={"/hfcache": hf_cache})
+@app.function(image=image, gpu=GPU, timeout=10800, volumes={"/hfcache": hf_cache})
 def suite(
     datasets: str = "humaneval,gsm8k",
     max_samples: int = 2,
@@ -145,7 +150,7 @@ def suite(
     return all_results
 
 
-@app.function(image=image, gpu="A10G", timeout=3600, volumes={"/hfcache": hf_cache})
+@app.function(image=image, gpu=GPU, timeout=3600, volumes={"/hfcache": hf_cache})
 def bench(
     dataset: str = "humaneval",
     max_samples: int = 2,

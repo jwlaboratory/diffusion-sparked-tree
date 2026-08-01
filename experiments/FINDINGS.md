@@ -12,13 +12,38 @@ verified byte-identical to plain autoregressive decoding.
 
 ## The headline
 
+Validated on 6 datasets (humaneval, mbpp, gsm8k, math500, mt-bench, alpaca),
+12 prompts x 512 tokens each, block-16 drafter, flat-schedule beam tree, budget 64.
+
 | comparison | acceptance | wall-clock |
 |---|---|---|
-| **vs DSpark** (the method we extend) | **+30%** | **+21%** |
-| **vs DDTree** (prior SOTA here) | **+10%** | tied (within noise) |
+| **vs DSpark** (the method we extend) | **+29.4%** | **+19.8%** |
+| vs DDTree (prior SOTA here) | +6.4% | **-5.0%** |
 
-On H100 the DDTree comparison appears to become a win on both axes (+12.5% / +31%),
-but the mechanism is unexplained — see *Open questions*.
+**vs DSpark the win is unambiguous and holds on every dataset.** Same drafter, same
+verifier, same losslessness guarantee - tree verification with markov-guided branch
+scoring instead of chain decoding.
+
+**vs DDTree the result is workload-split, and we lose on average:**
+
+| dataset | acceptance | speedup | verdict |
+|---|---|---|---|
+| alpaca | +27.3% | +6.7% | **win both** |
+| gsm8k | +11.9% | -1.2% | acceptance win, speed tied |
+| mt-bench | +7.3% | -4.5% | acceptance win |
+| math500 | -0.2% | -7.8% | loss |
+| humaneval | -3.5% | -12.1% | loss |
+| mbpp | -4.5% | -10.9% | loss |
+
+The split tracks finding 5: **chat favours markov guidance, structured text favours
+DFlash's horizon.** Free-form prose has weak positional structure, so a parallel
+drafter's independent guesses fall apart (DFlash gets 2.83 acceptance on alpaca)
+and intra-block dependency is worth the most. Code and math suit parallel drafting,
+and DFlash's block-16 drafter is better trained there than our 600-step fine-tune.
+
+> **Correction.** An earlier read of this comparison ("+10% acceptance, tied speed")
+> came from gsm8k alone at 4 prompts - our single best dataset. It did not
+> generalise. Single-dataset extrapolation, not the timing noise, was the error.
 
 ---
 

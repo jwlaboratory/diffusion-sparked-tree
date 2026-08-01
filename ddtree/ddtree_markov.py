@@ -368,6 +368,48 @@ def flat_width_schedule(budget: int, depth_limit: int) -> list[int]:
     return [base + (1 if i < extra else 0) for i in range(int(depth_limit))]
 
 
+def confidence_width_schedule(accept_probs, budget: int, depth_limit: int) -> list[int]:
+    """Per-round widths from DSpark's confidence head.
+
+    The flat schedule is the *average* optimal allocation, measured over many
+    rounds. The confidence head predicts P(accept) per position for THIS round, so
+    the allocation can adapt: an easy continuation needs one candidate at every
+    depth, a hard one needs hedging exactly where it is uncertain.
+
+    Marginal value of a slot at depth d ~ P(reach d) x P(top pick is wrong at d):
+
+        reach[d] = prod_{j<d} p_j      (no point widening a depth we never reach)
+        value[d] = reach[d] * (1 - p_d) (no point widening where we are certain)
+
+    Budget is split proportional to value, everything at least 1 slot while any
+    value remains.
+    """
+    probs = [float(min(max(x, 1e-4), 1.0 - 1e-4)) for x in accept_probs[:depth_limit]]
+    if not probs:
+        return flat_width_schedule(budget, depth_limit)
+
+    reach, running = [], 1.0
+    for p in probs:
+        reach.append(running)
+        running *= p
+    value = [r * (1.0 - p) for r, p in zip(reach, probs)]
+    total = sum(value)
+    if total <= 0:
+        return flat_width_schedule(budget, depth_limit)
+
+    widths, remaining = [], int(budget)
+    for v in value:
+        if remaining <= 0:
+            break
+        w = max(1, min(remaining, int(round(budget * v / total))))
+        widths.append(w)
+        remaining -= w
+    if remaining > 0 and widths:
+        # spare budget goes to the highest-value depth
+        widths[max(range(len(widths)), key=lambda i: value[i])] += remaining
+    return widths
+
+
 def beam_width_schedule(budget: int, depth_limit: int, decay: float = 0.6) -> list[int]:
     """Nodes per depth for the beam builder: wide near the root, narrowing with
     depth (deep positions are less likely to be reached at all). Sums to <= budget."""
@@ -382,6 +424,155 @@ def beam_width_schedule(budget: int, depth_limit: int, decay: float = 0.6) -> li
         remaining -= w
         width *= decay
     return widths
+
+
+_BEAM_GRAPHS: dict = {}
+
+
+def _tree_structure_from_levels(parent_local_np, token_np, widths):
+    """Shared CPU tail: level-local (parent, token) pairs -> tree arrays."""
+    total = int(sum(widths))
+    node_token_ids_np = np.empty(total, dtype=np.int64)
+    node_depths_np = np.empty(total, dtype=np.int64)
+    parents_np = np.empty(total + 1, dtype=np.int32)
+    parents_np[0] = -1
+    child_maps: list[dict[int, int]] = [dict()]
+
+    node_count, prev_global, offset = 0, [0], 0
+    for depth_idx, width in enumerate(widths):
+        for i in range(width):
+            parent_index = prev_global[int(parent_local_np[offset + i])]
+            token_id = int(token_np[offset + i])
+            current_index = node_count + 1
+            node_token_ids_np[node_count] = token_id
+            node_depths_np[node_count] = depth_idx + 1
+            parents_np[current_index] = parent_index
+            child_maps.append(dict())
+            child_maps[parent_index][token_id] = current_index
+            node_count += 1
+        prev_global = list(range(node_count - width + 1, node_count + 1))
+        offset += width
+
+    current_length = 1 + node_count
+    visibility_np = np.zeros((current_length, current_length), dtype=np.bool_)
+    visibility_np[0, 0] = True
+    for index in range(1, current_length):
+        parent_index = int(parents_np[index])
+        visibility_np[index, :index] = visibility_np[parent_index, :index]
+        visibility_np[index, index] = True
+
+    return (
+        torch.from_numpy(node_token_ids_np[:node_count]),
+        torch.from_numpy(node_depths_np[:node_count]),
+        parents_np[:current_length].tolist(),
+        child_maps,
+        torch.from_numpy(visibility_np),
+    )
+
+
+@torch.inference_mode()
+def build_beam_tree_graphed(
+    base_logits: torch.Tensor,
+    budget: int,
+    markov_head,
+    root_token_id: int,
+    candidates: int = 512,
+    widths: list[int] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
+    """CUDA-graph replay of the level-synchronous beam expansion.
+
+    Profiling (H100, budget 64): the level loop is ~100% of tree_build, and a
+    captured graph replays it in 1.61ms vs 3.98ms eager - 60% saved. Graph capture
+    needs STATIC shapes, which only became possible once the width schedule went
+    flat; the adaptive schedules could not be captured.
+
+    Candidates are per-depth here (fixed [depth, C]) rather than a deduped union,
+    so every buffer has a compile-time shape. That makes the candidate set
+    slightly different from the eager path - and slightly tighter, since each
+    depth gets its own top-C instead of sharing one pooled set.
+    """
+    depth_limit, vocab_size = base_logits.shape
+    if budget <= 0:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long),
+                [-1], [dict()], visibility)
+
+    widths = list(widths) if widths else flat_width_schedule(budget, depth_limit)
+    widths = [w for w in widths[:depth_limit] if w > 0]
+    device = base_logits.device
+    w1, w2 = markov_head.markov_w1.weight, markov_head.markov_w2.weight
+    C = int(min(candidates, vocab_size))
+    key = (tuple(widths), C, int(w1.shape[1]), device, id(markov_head))
+
+    entry = _BEAM_GRAPHS.get(key)
+    if entry is None:
+        entry = _capture_beam_graph(w1, w2, widths, C, device)
+        _BEAM_GRAPHS[key] = entry
+    if entry is False:                       # capture failed once; stay on eager
+        return build_beam_tree(base_logits, budget, markov_head, root_token_id,
+                               candidates=candidates, widths=widths)
+
+    logits = base_logits.float()
+    top_vals, top_ids = torch.topk(logits[: len(widths)], k=C, dim=-1)
+    entry["cand_ids"].copy_(top_ids)
+    entry["logits_cand"].copy_(top_vals)
+    entry["w2_cand"].copy_(w2.index_select(0, top_ids.reshape(-1)).view(len(widths), C, -1).float())
+    entry["root"].fill_(int(root_token_id))
+    entry["graph"].replay()
+
+    packed = torch.stack([entry["out_parent"], entry["out_token"]]).cpu().numpy()
+    return _tree_structure_from_levels(packed[0], packed[1], widths)
+
+
+def _capture_beam_graph(w1, w2, widths, C, device):
+    """Capture one replayable graph for this (widths, C) shape. Returns False on
+    failure so the caller can fall back permanently instead of retrying."""
+    rank = int(w1.shape[1])
+    total = int(sum(widths))
+    buf = dict(
+        cand_ids=torch.zeros(len(widths), C, dtype=torch.long, device=device),
+        logits_cand=torch.zeros(len(widths), C, dtype=torch.float32, device=device),
+        w2_cand=torch.zeros(len(widths), C, rank, dtype=torch.float32, device=device),
+        root=torch.zeros(1, dtype=torch.long, device=device),
+        out_parent=torch.zeros(total, dtype=torch.long, device=device),
+        out_token=torch.zeros(total, dtype=torch.long, device=device),
+        widths=widths,
+    )
+
+    def body():
+        tokens = buf["root"]
+        scores = torch.zeros(1, dtype=torch.float32, device=device)
+        offset = 0
+        for depth_idx, width in enumerate(widths):
+            bias = w1[tokens].float() @ buf["w2_cand"][depth_idx].T
+            corrected = buf["logits_cand"][depth_idx].unsqueeze(0) + bias
+            log_probs = corrected - torch.logsumexp(corrected, dim=-1, keepdim=True)
+            path = scores.unsqueeze(1) + log_probs
+            vals, flat = torch.topk(path.reshape(-1), width)
+            parent_local = torch.div(flat, C, rounding_mode="floor")
+            tokens = buf["cand_ids"][depth_idx].gather(0, flat % C)
+            scores = vals
+            buf["out_parent"][offset:offset + width].copy_(parent_local)
+            buf["out_token"][offset:offset + width].copy_(tokens)
+            offset += width
+
+    try:
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream):
+            for _ in range(3):
+                body()
+        torch.cuda.current_stream().wait_stream(stream)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            body()
+        buf["graph"] = graph
+        return buf
+    except Exception as exc:  # noqa: BLE001 - any capture failure means fall back
+        import logging
+        logging.getLogger(__name__).warning("CUDA graph capture failed (%s); using eager beam", exc)
+        return False
 
 
 @torch.inference_mode()
@@ -530,6 +721,7 @@ def ddtree_markov_generate(
     beam_decay: float = 0.6,
     beam_widths: list[int] | None = None,
     beam_flat: bool = False,
+    beam_cuda_graph: bool = False,
     collect_stats: bool = False,
 ) -> SimpleNamespace:
     """ddtree_generate adapted to the DSpark drafter, with selectable tree builder.
@@ -622,7 +814,27 @@ def ddtree_markov_generate(
 
         tree_build_start = cuda_time()
         if use_markov:
-            if tree_mode == "beam":
+            if tree_mode == "beam" and beam_cuda_graph and base_logits.is_cuda:
+                node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree_graphed(
+                    base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
+                    candidates=min(tree_candidates, 512),
+                    widths=beam_widths or (flat_width_schedule(tree_budget, block_size) if beam_flat else None),
+                )
+            elif tree_mode == "confidence" and model.confidence_head is not None:
+                # one cheap chain sample to get prev-token context for the head
+                chain_tokens, _ = model.sample_draft_tokens(
+                    base_logits, first_prev_token_ids=draft_input_ids[:, 0],
+                    hidden_states=block_hidden, temperature=0.0,
+                )
+                prev_ids = torch.cat([draft_input_ids[:, :1], chain_tokens[:, :-1]], dim=1)
+                conf = model.predict_confidence(block_hidden, prev_token_ids=prev_ids)
+                probs = conf.sigmoid()[0].tolist()
+                node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree(
+                    base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
+                    candidates=tree_candidates,
+                    widths=confidence_width_schedule(probs, tree_budget, block_size),
+                )
+            elif tree_mode in ("beam", "confidence"):
                 node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree(
                     base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
                     decay=beam_decay, candidates=tree_candidates, widths=beam_widths, flat=beam_flat

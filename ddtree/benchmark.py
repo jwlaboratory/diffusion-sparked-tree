@@ -24,7 +24,8 @@ def main() -> None:
     parser.add_argument("--dspark-name-or-path", type=str, default=None, help="e.g. deepseek-ai/dspark_qwen3_4b_block7; enables the dspark method")
     parser.add_argument("--minimal", action="store_true", help="only baseline/dflash/dspark/ddtree/sparked-tree (skip nomkv, wave, xmkv ablations)")
     parser.add_argument("--collect-tree-stats", action="store_true", help="record (depth, slot) of every accepted node for width-schedule tuning")
-    parser.add_argument("--tree-mode", type=str, default="exact", choices=["exact", "beam"], help="markov tree builder: best-first (exact) or level-synchronous beam")
+    parser.add_argument("--tree-mode", type=str, default="exact", choices=["exact", "beam", "confidence"], help="markov tree builder: best-first (exact) or level-synchronous beam")
+    parser.add_argument("--beam-cuda-graph", action="store_true", help="replay a captured CUDA graph for the beam level loop (needs static/flat widths)")
     parser.add_argument("--beam-widths", type=str, default=None, help="explicit beam width per depth, e.g. 2,3,7,7,5 (overrides --beam-decay)")
     parser.add_argument("--beam-decay", type=float, default=0.6, help="beam width decay per depth")
     parser.add_argument("--tree-candidates", type=int, default=2048, help="markov tree: restrict per-depth candidates before applying bias; 0 = full vocab")
@@ -198,6 +199,7 @@ def main() -> None:
                 beam_decay=args.beam_decay,
                 beam_widths=beam_widths,
                 beam_flat=beam_flat,
+                beam_cuda_graph=args.beam_cuda_graph,
             )
         else:
             _ = ddtree_generate(
@@ -291,6 +293,7 @@ def main() -> None:
                         beam_decay=args.beam_decay,
                         beam_widths=beam_widths,
                         beam_flat=beam_flat,
+                        beam_cuda_graph=args.beam_cuda_graph,
                         collect_stats=args.collect_tree_stats,
                     )
                 else:

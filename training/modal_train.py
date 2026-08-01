@@ -273,6 +273,8 @@ def pipeline_h100(
     max_length: int = 1024,
     max_train_steps: int = 1000,
     global_batch_size: int = 64,
+    num_samples: int = NUM_SAMPLES,
+    cache_tag: str = "",
 ):
     """Same pipeline on an H100 80GB.
 
@@ -291,6 +293,7 @@ def pipeline_h100(
             "max_length": max_length,
             "max_train_steps": max_train_steps,
             "global_batch_size": global_batch_size,
+            "target_cache_path": f'"{CACHE_DIR}{cache_tag}"',
         },
     )
     print(open("/root/DeepSpec/config_block16.py").read(), flush=True)
@@ -301,19 +304,25 @@ def pipeline_h100(
         if not os.path.exists(link):
             os.symlink(target, link)
 
-    if not os.path.exists("/vol/data/train.jsonl"):
+    data_path = f"/vol/data/train{cache_tag}.jsonl"
+    cache_dir = f"{CACHE_DIR}{cache_tag}"
+    if not os.path.exists(data_path):
+        # download_and_split errors on PARTIAL existence, so the eval split needs a
+        # tag-specific filename or it collides with a previous run's leftover.
         _sh(["python", "scripts/data/download_and_split.py",
-             "--sample-size", str(NUM_SAMPLES),
-             "--train-output-path", "/vol/data/train.jsonl",
-             "--test-output-dir", "/vol/data", "--skip-existing"])
+             "--sample-size", str(num_samples),
+             "--train-output-path", data_path,
+             "--test-output-dir", "/vol/data",
+             "--test-output-name", f"perfectblend{cache_tag}.jsonl",
+             "--skip-existing"])
         vol.commit()
 
-    done_marker = f"{CACHE_DIR}/.done"
+    done_marker = f"{cache_dir}/.done"
     if not os.path.exists(done_marker):
         _sh(["python", "scripts/data/prepare_target_cache.py",
              "--config", "config_block16.py",
-             "--train-data-path", "/vol/data/train.jsonl",
-             "--output-dir", CACHE_DIR, "--local-batch-size", "16"])
+             "--train-data-path", data_path,
+             "--output-dir", cache_dir, "--local-batch-size", "16"])
         open(done_marker, "w").write("ok")
         vol.commit()
 
@@ -953,3 +962,207 @@ def sweep_wide(datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
     vol.commit()
     print(f"\nsaved {out}\nSWEEP COMPLETE", flush=True)
     return {"summary": summary, "per_dataset": results}
+
+
+@app.function(image=image, timeout=28800, volumes={"/vol": vol, "/hfcache": hf_cache})
+def finalize(exp_suffix: str = "_bigdata", datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
+             max_samples: int = 12, max_new_tokens: int = 512, tree_budget: str = "32,64,128,256"):
+    """Stage 2 of experiments/NEXT.md: publish the trained drafter, then run the
+    full transformers-harness sweep on it.
+
+    One command to go from "training finished" to final single-sequence results.
+    Concurrency is out of scope here - that needs the SGLang build (stage 3).
+    """
+    import os
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    if not os.path.exists(f"{ckpt}/config.json"):
+        print(f"publishing checkpoint for {exp_suffix}...", flush=True)
+        publish.local(exp_suffix=exp_suffix)
+    else:
+        print(f"{ckpt} already published", flush=True)
+
+    print(f"\n=== full sweep: {datasets} x budgets {tree_budget} ===", flush=True)
+    return sweep_wide.local(
+        datasets=datasets, exp_suffix=exp_suffix, max_samples=max_samples,
+        max_new_tokens=max_new_tokens, tree_budget=tree_budget,
+    )
+
+
+@app.function(image=image, timeout=36000, volumes={"/vol": vol, "/hfcache": hf_cache})
+def queued_final(
+    exp_suffix: str = "_bigdata",
+    datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
+    max_samples: int = 12,
+    max_new_tokens: int = 512,
+    tree_budget: str = "64,128",
+    poll_seconds: int = 120,
+    max_wait_hours: float = 8.0,
+):
+    """Wait for the bigdata drafter to finish training, then run the final sweep.
+
+    Runs server-side and detached so it survives the local client. Polls the
+    volume for the published checkpoint rather than chaining off the training
+    app, so it is robust to the trainer being restarted or resumed.
+    """
+    import os
+    import time
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    trained_dir = f"/vol/checkpoints/deepspec/dspark_block16_qwen3_4b_warmstart{exp_suffix}"
+    deadline = max_wait_hours * 3600
+    waited = 0.0
+
+    while True:
+        vol.reload()
+        if os.path.exists(f"{ckpt}/config.json"):
+            print(f"[queue] checkpoint published at {ckpt}", flush=True)
+            break
+        # trainer publishes at the end; if it died mid-run we can still salvage
+        # the newest step_* directory rather than waiting out the full deadline.
+        if os.path.exists(trained_dir):
+            steps = [d for d in os.listdir(trained_dir) if d.startswith("step_")]
+            print(f"[queue] waiting... {waited/60:.0f} min, checkpoints so far: {sorted(steps)}", flush=True)
+        else:
+            print(f"[queue] waiting... {waited/60:.0f} min, training dir not created yet", flush=True)
+
+        if waited >= deadline:
+            if os.path.exists(trained_dir):
+                print("[queue] deadline hit but step checkpoints exist - publishing newest", flush=True)
+                publish.local(exp_suffix=exp_suffix)
+                break
+            raise TimeoutError(f"no checkpoint after {max_wait_hours}h")
+        time.sleep(poll_seconds)
+        waited += poll_seconds
+
+    if not os.path.exists(f"{ckpt}/config.json"):
+        publish.local(exp_suffix=exp_suffix)
+
+    print(f"\n=== FINAL BENCHMARK: {datasets} x budgets {tree_budget} ===", flush=True)
+    return sweep_wide.local(
+        datasets=datasets, exp_suffix=exp_suffix, max_samples=max_samples,
+        max_new_tokens=max_new_tokens, tree_budget=tree_budget,
+    )
+
+
+@app.function(image=image, gpu="A10G", timeout=14400, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_mode_one(dataset: str, exp_suffix: str = "_bigdata", mode: str = "beam",
+                   max_samples: int = 10, max_new_tokens: int = 512, tree_budget: str = "64,128"):
+    """One dataset, one tree-construction mode."""
+    import os
+    import torch
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    save_path = f"/root/mode_{dataset}_{mode}.pt"
+    _sh([
+        "python", "benchmark.py",
+        "--model-name-or-path", "Qwen/Qwen3-4B",
+        "--draft-name-or-path", "z-lab/Qwen3-4B-DFlash-b16",
+        "--dspark-name-or-path", ckpt,
+        "--dataset", dataset,
+        "--max-samples", str(max_samples),
+        "--max-new-tokens", str(max_new_tokens),
+        "--tree-budget", tree_budget,
+        "--tree-mode", mode,
+        "--beam-widths", "flat",
+        "--minimal",
+        "--temperature", "0.0",
+        "--disable-cpp-compact-cache",
+        "--save-path", save_path,
+    ], cwd="/root/ddtree")
+
+    data = torch.load(save_path, weights_only=False)
+    agg = {}
+    for response in data["responses"]:
+        for method, result in response.items():
+            r = agg.setdefault(method, {"accept": [], "tpot": [], "stage": {}})
+            r["accept"].extend(result.acceptance_lengths)
+            r["tpot"].append(result.time_per_output_token)
+            for k, v in getattr(result, "stage_times", {}).items():
+                r["stage"][k] = r["stage"].get(k, 0.0) + v
+    for method, r in agg.items():
+        r["mean_accept"] = sum(r["accept"]) / max(len(r["accept"]), 1)
+        r["mean_tpot_ms"] = 1e3 * sum(r["tpot"]) / max(len(r["tpot"]), 1)
+        del r["accept"], r["tpot"]
+    return agg
+
+
+@app.function(image=image, timeout=36000, volumes={"/vol": vol, "/hfcache": hf_cache})
+def queued_confidence(
+    exp_suffix: str = "_bigdata",
+    datasets: str = "humaneval,gsm8k,math500,alpaca",
+    max_samples: int = 10,
+    max_new_tokens: int = 512,
+    tree_budget: str = "64,128",
+    poll_seconds: int = 120,
+    max_wait_hours: float = 9.0,
+):
+    """Does DSpark's confidence head make a better tree than a fixed schedule?
+
+    The flat schedule is the AVERAGE optimal allocation (measured over many
+    rounds). The confidence head predicts P(accept) per position for the CURRENT
+    round, so width can adapt: concentrate shallow when the continuation looks
+    hard, spread deep when it looks easy.
+
+    Arms (identical otherwise): beam+flat vs confidence-adaptive widths.
+    """
+    import json
+    import os
+    import time
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    waited = 0.0
+    while not os.path.exists(f"{ckpt}/config.json"):
+        vol.reload()
+        if waited >= max_wait_hours * 3600:
+            raise TimeoutError(f"no checkpoint after {max_wait_hours}h")
+        print(f"[queue] waiting for {ckpt}... {waited/60:.0f} min", flush=True)
+        time.sleep(poll_seconds)
+        waited += poll_seconds
+    print(f"[queue] checkpoint ready, starting confidence experiment", flush=True)
+
+    names = [d.strip() for d in datasets.split(",")]
+    calls = {
+        (n, m): bench_mode_one.spawn(dataset=n, exp_suffix=exp_suffix, mode=m,
+                                     max_samples=max_samples, max_new_tokens=max_new_tokens,
+                                     tree_budget=tree_budget)
+        for n in names for m in ("beam", "confidence")
+    }
+    results = {}
+    for (n, m), call in calls.items():
+        try:
+            results.setdefault(n, {})[m] = call.get()
+        except Exception as exc:
+            print(f"!! {n}/{m} FAILED: {exc}", flush=True)
+
+    budgets = [int(b) for b in tree_budget.split(",")]
+    print(f"\n{'dataset':11s} {'budget':>6s} {'flat acc':>9s} {'conf acc':>9s} {'delta':>7s}  "
+          f"{'flat spd':>9s} {'conf spd':>9s} {'delta':>7s}")
+    deltas = {"acc": [], "spd": []}
+    for n, arms in results.items():
+        if "beam" not in arms or "confidence" not in arms:
+            continue
+        for B in budgets:
+            key = f"dsparktree_markov_tb{B}"
+            f_, c_ = arms["beam"].get(key), arms["confidence"].get(key)
+            if not f_ or not c_:
+                continue
+            bf = arms["beam"]["baseline"]["mean_tpot_ms"]
+            bc = arms["confidence"]["baseline"]["mean_tpot_ms"]
+            sf, sc = bf / f_["mean_tpot_ms"], bc / c_["mean_tpot_ms"]
+            da = 100 * (c_["mean_accept"] / f_["mean_accept"] - 1)
+            ds = 100 * (sc / sf - 1)
+            deltas["acc"].append(da)
+            deltas["spd"].append(ds)
+            print(f"{n:11s} {B:6d} {f_['mean_accept']:9.3f} {c_['mean_accept']:9.3f} {da:+6.1f}%  "
+                  f"{sf:8.2f}x {sc:8.2f}x {ds:+6.1f}%")
+    if deltas["acc"]:
+        print(f"\nMEAN  accept {sum(deltas['acc'])/len(deltas['acc']):+.1f}%   "
+              f"speed {sum(deltas['spd'])/len(deltas['spd']):+.1f}%")
+
+    os.makedirs("/vol/results", exist_ok=True)
+    out = f"/vol/results/confidence_{int(time.time())}.json"
+    json.dump(results, open(out, "w"), indent=2)
+    vol.commit()
+    print(f"\nsaved {out}\nCONFIDENCE EXPERIMENT COMPLETE", flush=True)
+    return results
