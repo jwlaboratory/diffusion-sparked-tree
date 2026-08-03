@@ -25,10 +25,45 @@ accepted *path* gathered out of the tree:
 
 which is exactly the shape prefill already passes.
 
-STATUS: written against the real signatures, NOT yet validated on a GPU. The
-oracle is `test_plugin_e2e.py`'s losslessness check -- greedy output must be
-byte-identical to no-speculation decoding. Do not trust acceptance numbers from
-this until that passes.
+STATUS: **NOT CORRECT. DO NOT USE FOR MEASUREMENTS.**
+
+It boots, drafts, builds real trees, verifies and generates -- and then produces
+WRONG OUTPUT. Eight GPU iterations got it from "will not start" to "runs and
+lies", which is the more dangerous state, so this banner matters.
+
+Known state, in the order the failures were hit:
+
+  1. FIXED  supports_target_verify_for_draft() must be True or the draft graph
+            runner raises a bare RuntimeError("This should not happen").
+  2. FIXED  Tree width is NOT speculative_num_draft_tokens -- that knob is the
+            drafter's gamma. See the note in __init__.py; the split uses
+            get_num_tokens_per_req_for_target_verify(is_draft_worker=...).
+  3. FIXED  The KV reserve knobs must be set or the first decode raises
+            TypeError in get_alloc_len_per_decode.
+  4. FIXED  token_to_kv_pool_allocator is not on self for this worker.
+  5. OPEN   With CUDA graphs enabled, target verify capture dies with
+            KeyError 'cache_seqlens' -- the dummy tree SpecInput comes from the
+            is_ngram() branch, which we gave up for the DSpark loader paths.
+            Currently worked around with --disable-cuda-graph, which is fine for
+            correctness but makes any timing from this worker meaningless.
+  6. OPEN   **lossless=False** (accept_length 1.24). Output diverges from greedy
+            baseline, so something in tree -> verify -> accept -> feedback is
+            wrong. Prime suspects, unresolved:
+              - the hidden-state injection: commit_cache_loc is sliced off an
+                assign_extend_cache_locs_func call sized for N per request, but
+                the committed run is accept_lens per request, so the flat slice
+                `[: committed_hidden.shape[0]]` almost certainly takes the wrong
+                slots for every request after the first.
+              - commit_positions is built with a per-request python loop over
+                accept_lens; correct in principle, unvalidated in practice.
+  7. OPEN   After fixing the bonus token to the LAST committed slot, the run
+            dies with a CUDA illegal memory access -- consistent with the
+            cache_loc slicing above indexing out of range.
+
+The oracle is `test_plugin_e2e.py`'s losslessness check: greedy output must be
+byte-identical to no-speculation decoding. Until that passes, every number this
+worker produces is meaningless. The width-cost measurement in PREDICTION.md does
+NOT depend on this file.
 """
 
 from __future__ import annotations
@@ -70,7 +105,9 @@ class SparkedDSparkWorker(DSparkWorkerV2):
 
     def __init__(self, server_args, gpu_id, ps, nccl_port, target_worker):
         super().__init__(server_args, gpu_id, ps, nccl_port, target_worker)
-        self.tree_width = int(server_args.speculative_num_draft_tokens)
+        from . import tree_width as _tree_width
+        # NOT speculative_num_draft_tokens -- that is the drafter's gamma+1.
+        self.tree_width = _tree_width()
         self.tree_budget = self.tree_width - 1
         self.tree_source = (
             DDTreeSource() if self.TREE_ARM == "ddtree" else DSparkTreeSource()
@@ -115,6 +152,14 @@ class SparkedDSparkWorker(DSparkWorkerV2):
             token_rows.append(tree_to_draft_tokens(root, node_tokens, N))
             mask_rows.append(tree_to_qlen_mask(visibility, N))
         return torch.cat(token_rows), batch_qlen_mask(mask_rows)
+
+    def _kv_allocator(self):
+        """DSparkWorkerV2 does not leave the allocator on self the way
+        BaseSpecWorker.alloc_memory_pool does, so take it from the target."""
+        alloc = getattr(self, "token_to_kv_pool_allocator", None)
+        if alloc is not None:
+            return alloc
+        return self._target_worker.get_memory_pool()[1]
 
     def _draft_model_for_tree(self):
         # The proposer owns the draft model; name differs across versions, so
@@ -216,7 +261,7 @@ class SparkedDSparkWorker(DSparkWorkerV2):
         accept_tokens = predict[accept_index].flatten()
 
         move_accept_tokens_to_target_kvcache(
-            batch, accept_index, accept_lens - 1, self.token_to_kv_pool_allocator)
+            batch, accept_index, accept_lens - 1, self._kv_allocator())
 
         # --- 5. feed the drafter: inject the ACCEPTED PATH's hidden states ---
         # The only real difference from the chain worker. accept_index names the
@@ -254,7 +299,15 @@ class SparkedDSparkWorker(DSparkWorkerV2):
             accept_lens=accept_lens,
             new_seq_lens=new_seq_lens,
             next_draft_input=make_next_draft_input(
-                bonus_tokens=predict[accept_index[:, 0]],
+                # The LAST committed token, not the first. accept_index is
+                # -1-padded, so index by accept_lens-1 per row; passing
+                # accept_index[:, 0] anchors the next block on the wrong token
+                # and silently corrupts the continuation.
+                bonus_tokens=predict[
+                    accept_index.gather(
+                        1, (accept_lens.long() - 1).clamp(min=0).unsqueeze(1)
+                    ).squeeze(1).long()
+                ],
                 new_seq_lens=new_seq_lens,
             ),
             speculative_num_draft_tokens=N,

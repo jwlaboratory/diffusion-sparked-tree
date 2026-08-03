@@ -34,11 +34,58 @@ __all__ = [
 _REGISTERED = False
 
 
+# Tree width is NOT speculative_num_draft_tokens. That knob drives DSpark's
+# drafter geometry: the draft sampler does `input_ids.view(bs, gamma)`, so
+# forcing it to 65 makes the draft CUDA graph capture 65 tokens per request while
+# the block-7 checkpoint only produces ~8, and capture dies with
+#   shape '[8, 64]' is invalid for input of size 520
+#
+# The two are genuinely different quantities. Our builder turns an 8-deep block
+# of logits into a 64-node tree -- depth is bounded by the drafter's block size,
+# width is not. DSpark conflates them only because its verify is a chain of
+# exactly gamma tokens.
+#
+# SGLang already anticipates this. `get_num_tokens_per_req_for_target_verify`
+# takes an `is_draft_worker` flag and carries a FIXME saying it exists so target
+# verify can use a different width "for other use cases which is not target
+# verify". That is precisely this case: the draft side keeps its natural gamma+1,
+# the target side verifies the whole tree.
+SPARKED_TREE_WIDTH_ENV = "SPARKED_TREE_WIDTH"
+
+
+def tree_width() -> int:
+    import os
+    return int(os.environ.get(SPARKED_TREE_WIDTH_ENV, "65"))
+
+
 class _DSparkTreeAlgo(SparkedSpecAlgo):
     """The real arms subclass DSparkWorkerV2, so DSpark-specific branches in the
     scheduler and model loader must take the DSpark path. Kept separate from
     SparkedSpecAlgo (which backs the standalone stand-in worker) so a failure in
     one does not silently change the other."""
+
+    def get_num_tokens_per_req_for_target_verify(
+        self, num_draft_tokens: int, is_draft_worker: bool
+    ) -> int:
+        # Draft worker keeps DSpark's geometry; target verifies the tree.
+        return num_draft_tokens if is_draft_worker else tree_width()
+
+    def handle_server_args(self, server_args) -> None:
+        # The KV reserve per decode is computed from these
+        # (allocation_sizing.get_alloc_len_per_decode); leaving them None raises
+        # TypeError on the first decode. The reserve must cover the TREE, so
+        # num_draft_tokens is the tree width here -- that is what gets allocated.
+        #
+        # The tension: this knob ALSO feeds the draft sampler's gamma
+        # (`input_ids.view(bs, gamma)`). With draft CUDA graphs captured it
+        # forces 65 tokens per request through a block-7 drafter and dies. With
+        # --disable-cuda-graph that capture never happens, which is why the two
+        # can coexist for now. Making them coexist WITH graphs is the open item.
+        w = tree_width()
+        server_args.speculative_num_draft_tokens = w
+        server_args.speculative_num_steps = w - 1
+        server_args.speculative_eagle_topk = 1
+        server_args.enable_mixed_chunk = False
 
     def is_dspark(self) -> bool:
         return True

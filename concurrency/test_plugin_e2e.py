@@ -33,7 +33,10 @@ app = modal.App("sparked-plugin-e2e")
 TAG = "lmsysorg/sglang:v0.5.16-cu129"
 image = (
     modal.Image.from_registry(TAG)
-    .pip_install("requests")
+    .pip_install("requests", "loguru")
+    # The DSpark-backed arms import our real builders out of ddtree/.
+    .add_local_dir(str(Path(__file__).resolve().parent.parent / "ddtree"),
+                   remote_path="/root/ddtree")
     .add_local_dir(Path(__file__).parent, remote_path="/root/concurrency")
 )
 hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
@@ -58,6 +61,7 @@ PROMPTS = [
 LAUNCHER = '''
 import os, sys
 sys.path.insert(0, "/root/concurrency")
+sys.path.insert(0, "/root/ddtree")     # build_markov_tree_precomputed lives here
 import sparked_plugin          # registers SPARKED (in parent AND spawned child)
 from sglang.launch_server import run_server
 from sglang.srt.server_args import prepare_server_args
@@ -111,8 +115,10 @@ def _server_info(port):
         return {"error": str(exc)}
 
 
-def _run_server(extra_args, port, launcher_file):
+def _run_server(extra_args, port, launcher_file, extra_env=None):
     env = dict(os.environ, HF_HOME="/hfcache", TOKENIZERS_PARALLELISM="false")
+    if extra_env:
+        env.update(extra_env)
     cmd = [sys.executable, launcher_file, "--model-path", TARGET,
            "--port", str(port), "--host", "127.0.0.1"] + extra_args
     print("$ " + " ".join(cmd), flush=True)
@@ -143,13 +149,24 @@ def run(algo: str = "SPARKED", draft: str = None, width: int = 17) -> dict:
     # --- 2. SPARKED plugin ---
     try:
         extra = ["--speculative-algorithm", algo,
-                 "--speculative-num-draft-tokens", str(width),
                  "--disable-overlap-schedule",
                  "--max-running-requests", "8",
                  "--mem-fraction-static", "0.75"]
+        env_extra = None
         if draft:
+            # DSpark-backed arms: the drafter keeps its own gamma (derived from
+            # the checkpoint's block size); tree width travels out of band.
             extra += ["--speculative-draft-model-path", draft]
-        proc = _run_server(extra, PORT + 1, launcher_file)
+            env_extra = {"SPARKED_TREE_WIDTH": str(width)}
+            # Staged: the target verify graph cannot build a dummy tree
+            # SpecInput for a DSpark-flagged algorithm (KeyError 'cache_seqlens')
+            # -- that dummy comes from the is_ngram() branch, which we gave up to
+            # keep the DSpark loader paths. Graphs affect SPEED, not output, so
+            # validate losslessness first and treat capture as separate work.
+            extra += ["--disable-cuda-graph"]
+        else:
+            extra += ["--speculative-num-draft-tokens", str(width)]
+        proc = _run_server(extra, PORT + 1, launcher_file, extra_env=env_extra)
     except Exception as exc:
         result["boot"] = f"FAILED: {type(exc).__name__}: {exc}"
         print(f"PLUGIN BOOT FAILED: {exc}", flush=True)
