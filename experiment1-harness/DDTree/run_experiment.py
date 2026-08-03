@@ -2,15 +2,13 @@
 on, but not a foreign one?
 
 This is the single experiment driver. It loads the target verifier and a set of
-draft backbones once, then runs any `backbone x corrector x verify` cell you ask
-for. The comparison that carries the claim is a 2x2 (temperature 0, greedy):
+draft backbones once, then runs every `backbone x corrector x verify` method in the
+config (temperature 0, greedy). By default that is all of them: native chain
+drafting for each backbone plus the tree matrix (corrector off / on per backbone).
 
-                     corrector=off             corrector=<dspark head>
-    backbone=dflash  dflash.tree               dflash.markov.tree     (FOREIGN)
-    backbone=dspark  dspark.tree               dspark.markov.tree     (OWN)
-
-The within-backbone delta is the head's effect. The claim predicts OWN >> 0 and
-FOREIGN <= 0. Three outputs support it:
+The head's effect is the within-backbone delta between a backbone's tree runs with
+the corrector off vs on. The claim predicts it is large-positive on the head's own
+backbone and <= 0 on a foreign one. Three outputs support it:
 
   * mean acceptance length per method,
   * per-depth acceptance rate (report depths <= min block size to depth-match),
@@ -30,19 +28,29 @@ Correctors are auto-derived from any dspark-kind backbone that has a markov head
 backbone "dspark_b7" exposes corrector "dspark_b7_markov". A corrector is token-only
 (bias = W2 @ W1[prev]) so it can be spliced onto any backbone.
 
-Standalone: `python run_experiment.py`  (runs the default 2x2 on gsm8k:8, ...).
-From Modal: `import run_experiment; run_experiment.run(cfg)`.
+Structure (so the work is checkpointable and parallelizable):
+  * load_context(cfg, device)          -> load target + backbones + method fns once
+  * run_one_dataset_raw(ctx, cfg, ...)  -> one dataset's raw per-method lengths/probe
+  * run(cfg)                            -> loop datasets (resumable via cfg["cache_dir"]),
+                                           then aggregate.build_summary(...)
+The per-dataset raw dict is the checkpoint unit; the Modal launcher fans these out
+across containers and caches each on a Volume so a re-run never recomputes a
+finished dataset. Aggregation lives in aggregate.py (pure Python, no torch).
+
+Standalone: `python run_experiment.py --cache-dir runs/cache`  (resumable).
+From Modal:  see ../modal_benchmark.py (parallel + volume checkpointing).
 """
 
 import argparse
 import json
+import os
 from dataclasses import dataclass, field
-from statistics import mean
 from typing import Callable, Optional
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
+import aggregate
 from model import DFlashDraftModel, DSparkDraftModel, load_and_process_dataset
 from dflash import dflash_generate
 from dspark import dspark_generate
@@ -74,21 +82,18 @@ class Method:
     verify: str = "tree"              # "tree" | "chain"
 
 
-# The default 2x2 that proves the claim, plus optional chain anchors.
+# All methods run by default (chain references + the tree matrix).
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
     {"name": "dspark_b7", "model_id": "deepseek-ai/dspark_qwen3_4b_block7", "kind": "dspark"},
 ]
 DEFAULT_METHODS = [
+    {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
     {"name": "dflash.tree", "backbone": "dflash_b16", "corrector": None, "verify": "tree"},
     {"name": "dflash.markov.tree", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
     {"name": "dspark.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
     {"name": "dspark.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
-]
-# Optional reference anchors (off by default): native chain drafting.
-DEFAULT_CHAIN_ANCHORS = [
-    {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
-    {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
 ]
 
 
@@ -107,6 +112,8 @@ def default_config() -> dict:
         "measure_per_depth": True,
         "measure_corrector_fit": True,
         "depth_report_limit": 7,  # per-depth / probe reporting horizon
+        "cache_dir": None,        # if set, per-dataset raw results are cached here (resume)
+        "force": False,           # ignore cache and recompute
     }
 
 
@@ -114,30 +121,81 @@ def default_config() -> dict:
 # Model loading                                                                #
 # --------------------------------------------------------------------------- #
 
-def load_backbones(cfg: dict, target, device) -> dict[str, Backbone]:
-    backbones: dict[str, Backbone] = {}
+EXPECTED_ROPE_THETA = 1000000.0  # every Qwen3-4B-derived checkpoint here
+
+
+def load_config(model_id: str):
+    """Load a draft checkpoint's config, normalizing RoPE across transformers majors.
+
+    The DSpark checkpoints were serialized by transformers v5, which moved RoPE into
+    a nested `rope_parameters` dict and stopped emitting a top-level `rope_theta`. We
+    pin 4.57.1, whose Qwen3Config knows nothing about that field and silently falls
+    back to its own default 10000.0 -- while these drafters were trained at 1000000.0.
+    Nothing raises; the drafts just get quietly worse.
+
+    That asymmetry is what makes it dangerous *here*: the DFlash checkpoint keeps a
+    top-level rope_theta and loads fine, so without this an experiment comparing the
+    two backbones would run DFlash correctly and DSpark broken, and read the
+    difference as a property of the markov head.
+
+    Do NOT delete this while the image pins transformers < 5.
+    """
+    config = AutoConfig.from_pretrained(model_id)
+    params = getattr(config, "rope_parameters", None)
+    if params:
+        rope_type = params.get("rope_type", "default")
+        if rope_type != "default":
+            raise ValueError(
+                f"{model_id}: rope_type={rope_type!r} needs an explicit scaling port; "
+                "only 'default' is handled here."
+            )
+        config.rope_theta = float(params["rope_theta"])
+    return config
+
+
+def load_backbones(cfg: dict, target, device) -> dict:
+    backbones: dict = {}
     for spec in cfg["backbones"]:
         bb = Backbone(**spec)
+        config = load_config(bb.model_id)
         if bb.kind == "dflash":
             bb.model = DFlashDraftModel.from_pretrained(
-                bb.model_id, attn_implementation="flash_attention_2", dtype=torch.bfloat16
+                bb.model_id, config=config,
+                attn_implementation="flash_attention_2", dtype=torch.bfloat16,
             ).to(device).eval()
             bb.markov_head = None
         elif bb.kind == "dspark":
             bb.model = DSparkDraftModel.from_pretrained(
-                bb.model_id, attn_implementation="flash_attention_2", dtype=torch.bfloat16
+                bb.model_id, config=config,
+                attn_implementation="flash_attention_2", dtype=torch.bfloat16,
             ).to(device).eval()
             bb.markov_head = bb.model.markov_head
         else:
             raise ValueError(f"backbone {bb.name!r}: unknown kind {bb.kind!r}")
         bb.eff_block_size = int(bb.block_size) if bb.block_size else int(bb.model.block_size)
+
+        # Recover the base the model will ACTUALLY rotate with, from the computed
+        # inv_freq buffer rather than the field load_config() just wrote, so this
+        # still fires if the normalization above rots. Default rope init sets
+        #   inv_freq[k] = base ** (-2k / dim),  dim = 2 * len(inv_freq)
+        # hence base = inv_freq[1] ** (-len(inv_freq)).
+        inv_freq = bb.model.rotary_emb.inv_freq.detach().double()
+        base = float(inv_freq[1] ** (-inv_freq.numel()))
+        if abs(base - EXPECTED_ROPE_THETA) / EXPECTED_ROPE_THETA > 1e-3:
+            raise ValueError(
+                f"backbone {bb.name!r} ({bb.model_id}): effective rotary base is {base:g}, "
+                f"expected {EXPECTED_ROPE_THETA:g}. The transformers v4/v5 rope_parameters "
+                "split is not being handled -- see load_config()."
+            )
+        print(f"loaded {bb.name}: block_size={bb.eff_block_size} rope_theta={base:g}")
+
         backbones[bb.name] = bb
     return backbones
 
 
-def build_correctors(backbones: dict[str, Backbone]) -> dict[str, object]:
+def build_correctors(backbones: dict) -> dict:
     """Every dspark backbone with a markov head exposes '<name>_markov'."""
-    correctors: dict[str, object] = {}
+    correctors: dict = {}
     for bb in backbones.values():
         if bb.markov_head is not None:
             correctors[f"{bb.name}_markov"] = bb.markov_head
@@ -150,8 +208,8 @@ def build_correctors(backbones: dict[str, Backbone]) -> dict[str, object]:
 
 def build_method_callable(
     method: Method,
-    backbones: dict[str, Backbone],
-    correctors: dict[str, object],
+    backbones: dict,
+    correctors: dict,
     target,
     eos_id: int,
     cfg: dict,
@@ -200,71 +258,11 @@ def build_method_callable(
 
 
 # --------------------------------------------------------------------------- #
-# Aggregation helpers                                                          #
+# Load / per-dataset run (the checkpointable, parallelizable units)           #
 # --------------------------------------------------------------------------- #
 
-def per_depth_accept(acceptance_lengths: list[int], depth_limit: int) -> dict[int, float]:
-    """Conditional accept rate at depth d = P(reach d+1 | reach d).
-
-    acceptance_lengths store L = new tokens per round; a round reaches tree depth d
-    when L >= d. So rate(d) = #(L >= d+1) / #(L >= d)."""
-    rates = {}
-    for d in range(1, depth_limit + 1):
-        reached = sum(1 for a in acceptance_lengths if a >= d)
-        deeper = sum(1 for a in acceptance_lengths if a >= d + 1)
-        rates[d] = (deeper / reached) if reached else None
-    return rates
-
-
-def merge_probe(dst: dict, src: dict) -> None:
-    for depth, b in src.items():
-        acc = dst.setdefault(depth, {"n": 0, "base_hit": 0, "corr_hit": 0, "ce_base": 0.0, "ce_corr": 0.0})
-        for k in acc:
-            acc[k] += b[k]
-
-
-def summarize_probe(probe: dict, depth_limit: int) -> dict:
-    """Turn raw depth sums into hit rates / CE and deltas, plus a depth<=limit rollup."""
-    by_depth = {}
-    roll = {"n": 0, "base_hit": 0, "corr_hit": 0, "ce_base": 0.0, "ce_corr": 0.0}
-    for depth in sorted(probe):
-        b = probe[depth]
-        n = max(b["n"], 1)
-        by_depth[depth] = {
-            "n": b["n"],
-            "base_hit_rate": b["base_hit"] / n,
-            "corr_hit_rate": b["corr_hit"] / n,
-            "delta_hit": (b["corr_hit"] - b["base_hit"]) / n,
-            "mean_ce_base": b["ce_base"] / n,
-            "mean_ce_corr": b["ce_corr"] / n,
-            "delta_ce": (b["ce_corr"] - b["ce_base"]) / n,  # negative = corrector helps
-        }
-        if depth <= depth_limit:
-            for k in roll:
-                roll[k] += b[k]
-    nn = max(roll["n"], 1)
-    overall = {
-        "n": roll["n"],
-        "base_hit_rate": roll["base_hit"] / nn,
-        "corr_hit_rate": roll["corr_hit"] / nn,
-        "delta_hit": (roll["corr_hit"] - roll["base_hit"]) / nn,
-        "mean_ce_base": roll["ce_base"] / nn,
-        "mean_ce_corr": roll["ce_corr"] / nn,
-        "delta_ce": (roll["ce_corr"] - roll["ce_base"]) / nn,
-    }
-    return {"by_depth": by_depth, f"overall_depth_le_{depth_limit}": overall}
-
-
-# --------------------------------------------------------------------------- #
-# Main run                                                                     #
-# --------------------------------------------------------------------------- #
-
-def run(cfg: dict) -> dict:
-    torch.manual_seed(cfg["seed"])
-    torch.cuda.manual_seed_all(cfg["seed"])
-    device = torch.device("cuda:0")
-    maybe_enable_cpp_compact(True)
-
+def load_context(cfg: dict, device) -> dict:
+    """Load target + backbones + built method callables once, and warm them up."""
     target = AutoModelForCausalLM.from_pretrained(
         cfg["target"], attn_implementation="sdpa", dtype=torch.bfloat16,
     ).to(device).eval()
@@ -280,7 +278,7 @@ def run(cfg: dict) -> dict:
         for m in methods
     }
 
-    # Warmup each method once (kernels, cache-compaction extension).
+    # Warmup each method once (kernels, cache-compaction extension). Cheap: short prompt.
     warmup_text = tokenizer.apply_chat_template(
         [{"role": "user", "content": "Warmup"}],
         tokenize=False, add_generation_prompt=True, enable_thinking=False,
@@ -289,112 +287,96 @@ def run(cfg: dict) -> dict:
     for fn in method_fns.values():
         _ = fn(warmup_ids)
 
-    depth_limit = cfg["depth_report_limit"]
-    summary = {
-        "config": {
-            **{k: cfg[k] for k in (
-                "target", "tasks", "tree_budget", "temperature", "max_new_tokens",
-                "seed", "probe_corrector", "depth_report_limit",
-            )},
-            "backbones": {b.name: {"model_id": b.model_id, "kind": b.kind, "block_size": b.eff_block_size}
-                          for b in backbones.values()},
-            "methods": {m.name: {"backbone": m.backbone, "corrector": m.corrector, "verify": m.verify}
-                        for m in methods},
-            "metric": "mean_acceptance_length",
+    return {
+        "device": device,
+        "target": target,
+        "tokenizer": tokenizer,
+        "methods": methods,
+        "method_fns": method_fns,
+        "backbones_meta": {
+            b.name: {"model_id": b.model_id, "kind": b.kind, "block_size": b.eff_block_size}
+            for b in backbones.values()
         },
-        "results": {},        # results[dataset][method]
-        "corrector_fit": {},  # corrector_fit[method] (only no-corrector tree runs)
-        "transfer": {},       # transfer[backbone]
     }
 
-    # method -> accumulated probe across datasets, for the corrector-fit rollup.
-    probe_accum: dict[str, dict] = {}
 
+def run_one_dataset_raw(ctx: dict, cfg: dict, dataset_name: str, max_samples) -> dict:
+    """Run every method on one dataset; return JSON-serializable raw results.
+
+    raw = {"n": int, "methods": {name: {"lengths": [...], "probe": {depth: {...}}}}}
+    This is the checkpoint unit written to the cache and merged by aggregate.py."""
+    tokenizer, methods, method_fns = ctx["tokenizer"], ctx["methods"], ctx["method_fns"]
+    dataset = load_and_process_dataset(dataset_name)
+    if max_samples is not None and len(dataset) > max_samples:
+        dataset = dataset.shuffle(seed=cfg["seed"]).select(range(max_samples))
+
+    lengths = {m.name: [] for m in methods}
+    probes: dict = {}
+    for row in dataset:
+        text = tokenizer.apply_chat_template(
+            [{"role": "user", "content": row["turns"][0]}],
+            tokenize=False, add_generation_prompt=True, enable_thinking=False,
+        )
+        input_ids = tokenizer.encode(text, return_tensors="pt").to(ctx["device"])
+        for m in methods:
+            result = method_fns[m.name](input_ids)
+            lengths[m.name].extend(result.acceptance_lengths)
+            probe = getattr(result, "probe_by_depth", None)
+            if probe:
+                aggregate.merge_probe(probes.setdefault(m.name, {}), probe)
+
+    return {
+        "n": len(dataset),
+        "methods": {
+            m.name: {"lengths": lengths[m.name], "probe": probes.get(m.name, {})}
+            for m in methods
+        },
+    }
+
+
+def _print_dataset(name: str, raw: dict, cfg: dict) -> None:
+    print(f"\nDataset {name} ({raw['n']} samples, tree_budget {cfg['tree_budget']})")
+    print(f"{'method':<26}{'mean_accept':>12}{'rounds':>9}")
+    print("-" * 47)
+    for mname, md in raw["methods"].items():
+        L = md["lengths"]
+        ma = (sum(L) / len(L)) if L else 0.0
+        print(f"{mname:<26}{ma:>12.3f}{len(L):>9}")
+
+
+# --------------------------------------------------------------------------- #
+# Sequential run (resumable via cfg["cache_dir"])                              #
+# --------------------------------------------------------------------------- #
+
+def run(cfg: dict) -> dict:
+    torch.manual_seed(cfg["seed"])
+    torch.cuda.manual_seed_all(cfg["seed"])
+    device = torch.device("cuda:0")
+    maybe_enable_cpp_compact(True)
+
+    ctx = load_context(cfg, device)
+
+    cache_dir = cfg.get("cache_dir")
+    fp = aggregate.fingerprint(cfg)
+    per_dataset_raw = {}
     for dataset_name, max_samples in cfg["tasks"]:
-        dataset = load_and_process_dataset(dataset_name)
-        if max_samples is not None and len(dataset) > max_samples:
-            dataset = dataset.shuffle(seed=cfg["seed"]).select(range(max_samples))
+        raw, cpath = None, None
+        if cache_dir:
+            cpath = os.path.join(cache_dir, fp, f"{dataset_name}__n{max_samples}.json")
+            if not cfg.get("force") and os.path.exists(cpath):
+                raw = json.load(open(cpath))
+                print(f"[resume] {dataset_name} loaded from {cpath}")
+        if raw is None:
+            raw = run_one_dataset_raw(ctx, cfg, dataset_name, max_samples)
+            if cpath:
+                os.makedirs(os.path.dirname(cpath), exist_ok=True)
+                json.dump(raw, open(cpath, "w"))
+        per_dataset_raw[dataset_name] = raw
+        _print_dataset(dataset_name, raw, cfg)
 
-        lengths = {m.name: [] for m in methods}
-        for row in dataset:
-            text = tokenizer.apply_chat_template(
-                [{"role": "user", "content": row["turns"][0]}],
-                tokenize=False, add_generation_prompt=True, enable_thinking=False,
-            )
-            input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
-            for m in methods:
-                result = method_fns[m.name](input_ids)
-                lengths[m.name].extend(result.acceptance_lengths)
-                probe = getattr(result, "probe_by_depth", None)
-                if probe:
-                    merge_probe(probe_accum.setdefault(m.name, {}), probe)
-
-        summary["results"][dataset_name] = {}
-        for m in methods:
-            v = lengths[m.name]
-            entry = {"mean_accept": (mean(v) if v else 0.0), "rounds": len(v)}
-            if cfg["measure_per_depth"] and m.verify == "tree":
-                entry["per_depth_accept"] = per_depth_accept(v, depth_limit)
-            summary["results"][dataset_name][m.name] = entry
-
-        print(f"\nDataset {dataset_name} ({len(dataset)} samples, tree_budget {cfg['tree_budget']})")
-        print(f"{'method':<26}{'mean_accept':>12}{'rounds':>9}")
-        print("-" * 47)
-        for m in methods:
-            e = summary["results"][dataset_name][m.name]
-            print(f"{m.name:<26}{e['mean_accept']:>12.3f}{e['rounds']:>9}")
-
-    # Corrector-fit rollup (per no-corrector tree method, keyed by its backbone).
-    for m in methods:
-        if m.name in probe_accum:
-            summary["corrector_fit"][m.name] = {
-                "backbone": m.backbone,
-                "probe_corrector": cfg.get("probe_corrector"),
-                **summarize_probe(probe_accum[m.name], depth_limit),
-            }
-
-    # Transfer rollup: within-backbone acceptance % change from adding the corrector.
-    def method_by(backbone, corrected):
-        for m in methods:
-            if m.verify == "tree" and m.backbone == backbone and (m.corrector is not None) == corrected:
-                return m.name
-        return None
-
-    for bb in backbones:
-        off = method_by(bb, corrected=False)
-        on = method_by(bb, corrected=True)
-        if off and on:
-            off_mean = mean([summary["results"][d][off]["mean_accept"] for d, _ in cfg["tasks"]])
-            on_mean = mean([summary["results"][d][on]["mean_accept"] for d, _ in cfg["tasks"]])
-            summary["transfer"][bb] = {
-                "off_method": off, "on_method": on,
-                "accept_off": off_mean, "accept_on": on_mean,
-                "accept_pct_change": ((on_mean - off_mean) / off_mean * 100.0) if off_mean else None,
-            }
-
-    _print_rollups(summary, depth_limit)
+    summary = aggregate.build_summary(cfg, ctx["backbones_meta"], per_dataset_raw)
+    aggregate.print_rollups(summary)
     return summary
-
-
-def _print_rollups(summary: dict, depth_limit: int) -> None:
-    if summary["transfer"]:
-        print("\n" + "=" * 60)
-        print("Transfer: acceptance-length % change from adding the corrector")
-        print("=" * 60)
-        for bb, t in summary["transfer"].items():
-            pct = t["accept_pct_change"]
-            if pct is None:
-                print(f"  {bb}: n/a")
-            else:
-                print(f"  {bb:<16} {t['accept_off']:.3f} -> {t['accept_on']:.3f}  ({pct:+.1f}%)")
-    if summary["corrector_fit"]:
-        print("\n" + "=" * 60)
-        print(f"Corrector fit (probe head, depth<={depth_limit}): does the head fit this backbone?")
-        print("=" * 60)
-        for name, cf in summary["corrector_fit"].items():
-            o = cf[f"overall_depth_le_{depth_limit}"]
-            print(f"  {cf['backbone']:<16} delta_hit={o['delta_hit']:+.4f}  "
-                  f"delta_ce={o['delta_ce']:+.4f}  (n={o['n']})")
 
 
 # --------------------------------------------------------------------------- #
@@ -409,7 +391,8 @@ def parse_args() -> dict:
     p.add_argument("--temperature", type=float, default=None)
     p.add_argument("--max-new-tokens", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--chain-anchors", action="store_true", help="also run native chain references")
+    p.add_argument("--cache-dir", type=str, default=None, help="per-dataset resume cache dir")
+    p.add_argument("--force", action="store_true", help="ignore cache and recompute")
     p.add_argument("--save-json", type=str, default=None)
     a = p.parse_args()
 
@@ -419,10 +402,10 @@ def parse_args() -> dict:
     if a.temperature is not None: cfg["temperature"] = a.temperature
     if a.max_new_tokens is not None: cfg["max_new_tokens"] = a.max_new_tokens
     if a.seed is not None: cfg["seed"] = a.seed
+    if a.cache_dir: cfg["cache_dir"] = a.cache_dir
+    if a.force: cfg["force"] = True
     if a.tasks:
         cfg["tasks"] = [[s.split(":")[0], int(s.split(":")[1])] for s in a.tasks.split(",") if s.strip()]
-    if a.chain_anchors:
-        cfg["methods"] = cfg["methods"] + DEFAULT_CHAIN_ANCHORS
     cfg["_save_json"] = a.save_json
     return cfg
 

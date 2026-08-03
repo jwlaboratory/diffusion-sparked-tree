@@ -1,30 +1,25 @@
-"""
-Modal launcher for Experiment 1: markov-corrector transfer across drafters.
+"""Modal launcher for Experiment 2: does a longer draft horizon raise acceptance?
 
-ONE stage. The remote GPU function loads the target verifier + a set of draft
+ONE stage. The remote GPU function loads the target verifier + both DSpark draft
 backbones once and runs a `backbone x corrector x verify` matrix via
 `DDTree/run_experiment.py` (imported in-process -- no subprocess, no shell-out).
-The official `DDTree/benchmark.py` is NOT on this path; its equivalence to our
-tree loop is a one-off check, not part of the run.
 
-The question this proves (temperature 0, greedy): a markov head is a residual
-correction fitted to the backbone it was trained on. Same head should raise
-acceptance a lot on its OWN backbone and not at all (or hurt) on a FOREIGN one.
+The question this proves (temperature 0, greedy): our fine-tuned block-16 DSpark
+drafter drafts 16 tokens per block versus the stock block-7 checkpoint's 7. If the
+longer horizon is worth training, the tree should commit more accepted tokens per
+round. The two checkpoints are architecturally identical, so this is a clean
+block-size ablation.
 
-All methods run by default (backbone x corrector x verify):
-    dflash.chain         DFlash-b16 block drafting, no tree, no markov
-    dflash.tree          DFlash-b16, no corrector, tree            (== ddtree)
-    dflash.markov.tree   DFlash-b16 + DSpark-b7 markov, tree       (foreign splice)
-    dspark.chain         DSpark-b7 with its own markov, native serial
-    dspark.tree          DSpark-b7,  no corrector, tree
-    dspark.markov.tree   DSpark-b7  + DSpark-b7 markov, tree
+Arms (backbone x corrector x verify):
+    dspark_b7.tree           block-7,  no corrector, tree   (markov-off control)
+    dspark_b7.markov.tree    block-7  + its own markov, tree
+    dspark_b16.tree          block-16, no corrector, tree   (markov-off control)
+    dspark_b16.markov.tree   block-16 + its own markov, tree
 
-The `transfer` rollup summarizes the within-backbone effect of the head (own vs
-foreign %); the `corrector_fit` probe is the confound-free version.
-
-Backbones are parameterized by (checkpoint, kind, block_size). Add more, or run a
-b16 checkpoint at block_size=7 to depth-match a foreign backbone to a b7 head --
-that is why there is no separate depth cap. See reproduce.md.
+The two `*.markov.tree` arms are the headline comparison; the `*.tree` arms isolate
+the block-size effect from the corrector's contribution. The `block_size` rollup
+reports per-dataset and overall acceptance for b7 vs b16, absolute delta and %
+change, per arm.
 
 Usage:
     modal run modal_benchmark.py
@@ -43,28 +38,25 @@ import modal
 
 TARGET = "Qwen/Qwen3-4B"
 
-# Draft backbones. `kind` is intrinsic to the checkpoint ("dflash" | "dspark").
-# `block_size` is an optional runtime override (default = checkpoint config); e.g.
-# add {"name": "dflash_b7", "model_id": "z-lab/Qwen3-4B-DFlash-b16",
-#      "kind": "dflash", "block_size": 7} to depth-match DFlash to the b7 head.
+# Draft backbones. Both are `kind="dspark"`; they differ only in block_size, which
+# is intrinsic to each checkpoint's config (7 vs 16) -- no runtime override needed.
+# BLOCK16_MODEL_ID is our fine-tuned checkpoint; kept as a single constant so it is
+# trivially swappable if the HF repo id changes.
+BLOCK16_MODEL_ID = "shreybirmiwal/Qwen3-4B-DSpark-b16"
 BACKBONES = [
-    {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
     {"name": "dspark_b7", "model_id": "deepseek-ai/dspark_qwen3_4b_block7", "kind": "dspark"},
+    {"name": "dspark_b16", "model_id": BLOCK16_MODEL_ID, "kind": "dspark"},
 ]
 
-# All methods run by default. Each is backbone x corrector x verify. corrector=None
-# means no correction; a corrector name is "<dspark-backbone>_markov" (auto-derived).
+# Each method is backbone x corrector x verify. corrector=None means the markov-off
+# control; a corrector name is "<dspark-backbone>_markov" (auto-derived from the
+# backbone's own head). The two headline arms are the `*.markov.tree` ones.
 METHODS = [
-    {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
-    {"name": "dflash.tree", "backbone": "dflash_b16", "corrector": None, "verify": "tree"},
-    {"name": "dflash.markov.tree", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "tree"},
-    {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
-    {"name": "dspark.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
-    {"name": "dspark.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark_b7.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
+    {"name": "dspark_b7.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark_b16.tree", "backbone": "dspark_b16", "corrector": None, "verify": "tree"},
+    {"name": "dspark_b16.markov.tree", "backbone": "dspark_b16", "corrector": "dspark_b16_markov", "verify": "tree"},
 ]
-
-# Markov head used for the tree-free corrector-fit probe (measured on no-corrector runs).
-PROBE_CORRECTOR = "dspark_b7_markov"
 
 # Small representative slice: one math, one code, one chat. (dataset, max_samples)
 TASKS = [
@@ -77,15 +69,14 @@ TREE_BUDGET = 64
 TEMPERATURE = 0.0          # greedy / deterministic (tree build is greedy top-k regardless)
 MAX_NEW_TOKENS = 512
 SEED = 0
-CONFIDENCE_THRESHOLD = 0.0  # dspark chain only
+CONFIDENCE_THRESHOLD = 0.0  # dspark chain only (unused by the tree arms here)
 MEASURE_PER_DEPTH = True
-MEASURE_CORRECTOR_FIT = True
-DEPTH_REPORT_LIMIT = 7      # per-depth / probe reporting horizon (depth-match to b7)
+DEPTH_REPORT_LIMIT = 16    # must reach the b16 horizon or its whole advantage is invisible
 
 # Acceptance length at temperature 0 is deterministic and GPU-independent, so an
 # A100-40GB reproduces the numbers exactly. Timing/speedup would need matching H100.
 GPU = "A100-40GB"
-TIMEOUT_SECONDS = 3 * 60 * 60  # 3h: 6 methods incl. slow token-by-token chains
+TIMEOUT_SECONDS = 60 * 60
 
 # Pinned versions. torch 2.5.1 (cu124) + a matching prebuilt flash-attn wheel.
 TORCH_VERSION = "2.5.1"
@@ -104,7 +95,6 @@ def build_run_config() -> dict:
         "target": TARGET,
         "backbones": BACKBONES,
         "methods": list(METHODS),
-        "probe_corrector": PROBE_CORRECTOR,
         "tasks": TASKS,
         "tree_budget": TREE_BUDGET,
         "temperature": TEMPERATURE,
@@ -112,7 +102,6 @@ def build_run_config() -> dict:
         "seed": SEED,
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "measure_per_depth": MEASURE_PER_DEPTH,
-        "measure_corrector_fit": MEASURE_CORRECTOR_FIT,
         "depth_report_limit": DEPTH_REPORT_LIMIT,
     }
 
@@ -144,7 +133,7 @@ image = (
     .add_local_dir(DDTREE_DIR.as_posix(), remote_path="/root/DDTree")
 )
 
-app = modal.App("ddtree-markov-transfer")
+app = modal.App("dspark-block16-compare")
 
 hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
 results_vol = modal.Volume.from_name("ddtree-results", create_if_missing=True)
@@ -170,7 +159,10 @@ def run_experiment(cfg: dict) -> dict:
 
     summary = exp.run(cfg)
 
-    out = Path("/results/summary.json")
+    # Namespaced: the `ddtree-results` volume is shared with experiment 1, which
+    # writes /results/summary.json. Writing there would clobber its results.
+    out = Path("/results/block16/summary.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2))
     results_vol.commit()
     return summary
@@ -180,22 +172,18 @@ def run_experiment(cfg: dict) -> dict:
 def main():
     summary = run_experiment.remote(build_run_config())
 
-    out_dir = HERE / "Results"
+    out_dir = HERE / "results"
     out_dir.mkdir(exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
     print(f"\nSaved summary to {out_dir / 'summary.json'}")
-    if summary.get("transfer"):
-        print("\nTransfer (acceptance % change from adding the corrector):")
-        for bb, t in summary["transfer"].items():
-            pct = t.get("accept_pct_change")
+    if summary.get("block_size"):
+        print("\nBlock size (acceptance-length change from b7 -> b16, per arm):")
+        for arm, r in summary["block_size"].items():
+            o = r["overall"]
+            pct = o.get("pct_change")
             if pct is None:
-                print(f"  {bb}: n/a")
+                print(f"  {arm}: n/a")
             else:
-                print(f"  {bb}: {t['accept_off']:.3f} -> {t['accept_on']:.3f} ({pct:+.1f}%)")
-    if summary.get("corrector_fit"):
-        lim = summary["config"]["depth_report_limit"]
-        print(f"\nCorrector fit (depth<={lim}):")
-        for name, cf in summary["corrector_fit"].items():
-            o = cf[f"overall_depth_le_{lim}"]
-            print(f"  {cf['backbone']}: delta_hit={o['delta_hit']:+.4f} delta_ce={o['delta_ce']:+.4f}")
+                print(f"  {arm}: b{r['small_block']}={o['small']:.3f} -> "
+                      f"b{r['large_block']}={o['large']:.3f} ({pct:+.1f}%)")
