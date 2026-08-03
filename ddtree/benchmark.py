@@ -24,10 +24,14 @@ def main() -> None:
     parser.add_argument("--dspark-name-or-path", type=str, default=None, help="e.g. deepseek-ai/dspark_qwen3_4b_block7; enables the dspark method")
     parser.add_argument("--minimal", action="store_true", help="only baseline/dflash/dspark/ddtree/sparked-tree (skip nomkv, wave, xmkv ablations)")
     parser.add_argument("--collect-tree-stats", action="store_true", help="record (depth, slot) of every accepted node for width-schedule tuning")
-    parser.add_argument("--tree-mode", type=str, default="exact", choices=["exact", "beam", "confidence"], help="markov tree builder: best-first (exact) or level-synchronous beam")
+    parser.add_argument("--tree-mode", type=str, default="exact", choices=["exact", "exact-precomputed", "beam", "confidence"], help="markov tree builder: best-first (exact), best-first against a precomputed transition table (exact-precomputed, uses --beam-candidates), or level-synchronous beam")
     parser.add_argument("--beam-cuda-graph", action="store_true", help="replay a captured CUDA graph for the beam level loop (needs static/flat widths)")
     parser.add_argument("--beam-widths", type=str, default=None, help="explicit beam width per depth, e.g. 2,3,7,7,5 (overrides --beam-decay)")
     parser.add_argument("--beam-decay", type=float, default=0.6, help="beam width decay per depth")
+    parser.add_argument("--beam-candidates", type=int, default=512, help="beam builder: per-depth candidate pool C; the precomputed transition table is C x C, so this knob is quadratic. Measured: 256 loses 3.6%% acceptance for no speed gain, 2048 gains 4%% acceptance but 4x the build")
+    parser.add_argument("--beam-min-width", type=int, default=2, help="beam builder: minimum slots per depth under a flat schedule; caps effective depth at budget // min_width (2 = fix the budget-16 chain, 5 = truncate to 12 levels at budget 64)")
+    parser.add_argument("--beam-max-fanout", type=int, default=0, help="exact-precomputed: cap how many siblings one node may contribute (0 = budget). The shipped table slice is [rows, fanout], so this bounds transfer volume independently of tree budget")
+    parser.add_argument("--no-beam-precompute", action="store_true", help="beam builder: recompute branch transitions inside the level loop instead of precomputing the C x C table")
     parser.add_argument("--tree-candidates", type=int, default=2048, help="markov tree: restrict per-depth candidates before applying bias; 0 = full vocab")
     parser.add_argument("--confidence-threshold", type=float, default=0.0, help="DSpark confidence head threshold; 0 disables proposal truncation")
     parser.add_argument("--block-size", type=int, default=None)
@@ -200,6 +204,10 @@ def main() -> None:
                 beam_widths=beam_widths,
                 beam_flat=beam_flat,
                 beam_cuda_graph=args.beam_cuda_graph,
+                beam_precompute=not args.no_beam_precompute,
+                beam_candidates=args.beam_candidates,
+                beam_min_width=args.beam_min_width,
+                beam_max_fanout=args.beam_max_fanout,
             )
         else:
             _ = ddtree_generate(
@@ -294,6 +302,10 @@ def main() -> None:
                         beam_widths=beam_widths,
                         beam_flat=beam_flat,
                         beam_cuda_graph=args.beam_cuda_graph,
+                        beam_precompute=not args.no_beam_precompute,
+                        beam_candidates=args.beam_candidates,
+                        beam_min_width=args.beam_min_width,
+                        beam_max_fanout=args.beam_max_fanout,
                         collect_stats=args.collect_tree_stats,
                     )
                 else:

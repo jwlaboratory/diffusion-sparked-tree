@@ -51,6 +51,31 @@ def coverage_table(slots):
     return table
 
 
+def depth_mass_table(slots, depth_limit=16):
+    """Share of all accepted nodes living at each depth, and the tail beyond it.
+
+    Distinct from the coverage table above, which answers "given that a node at
+    depth d was accepted, how far down the ranking was it?". That is a conditional
+    and says nothing about how often depth d is reached at all - so a depth can
+    show a low hit rate while still carrying real acceptance mass. Truncating the
+    tree trades away exactly this mass, so it is the number that decides whether
+    truncation is free.
+    """
+    by_depth = Counter(depth for depth, _ in slots)
+    total = sum(by_depth.values())
+    rows, tail = [], total
+    for depth in range(1, depth_limit + 1):
+        count = by_depth.get(depth, 0)
+        rows.append({
+            "depth": depth,
+            "count": count,
+            "share": count / total if total else 0.0,
+            "share_at_or_beyond": tail / total if total else 0.0,
+        })
+        tail -= count
+    return rows
+
+
 def slots_for_coverage(curve, target):
     for index, value in enumerate(curve):
         if value >= target:
@@ -199,6 +224,12 @@ def main():
               f"{get(3):>6s} {get(7):>6s} {slots_for_coverage(curve, args.target):9d}")
 
     depth_limit = max(combined) if combined else 16
+
+    print(f"\n{'depth':>5s} {'accepted':>9s} {'share':>7s} {'>= this depth':>14s}")
+    for row in depth_mass_table(all_slots, depth_limit):
+        print(f"{row['depth']:5d} {row['count']:9d} {row['share']:6.1%} {row['share_at_or_beyond']:13.1%}")
+    print("\n'>= this depth' is what a truncation at that depth gives up.")
+
     proposals = {
         "measured (this data)": propose_schedule(combined, args.budget, args.target),
         "geometric decay=0.6 (current)": geometric_schedule(args.budget, depth_limit, 0.6),

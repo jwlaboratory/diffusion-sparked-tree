@@ -50,6 +50,58 @@ RUNS = [
     ("confidence.json", dict(
         run="confidence", gpu="A10G", drafter="block-16 bigdata", builder="beam flat vs confidence-adaptive",
         prompts="10 x 512", note="confidence-head widths: -2.7% accept, -6.6% speed")),
+
+    # --- precomputed-transition builder (this session). Every run below uses the
+    # block-16 bigdata drafter and the C x C precomputed table; arms differ only in
+    # the knob named in `note`.
+    ("ablations_block16.json", dict(
+        run="ablations-block16", gpu="A10G", drafter="block-16 bigdata", builder="best-first (lazy, C=2048)",
+        prompts="6 x 384", note="markov-vs-independence at ONE horizon (fixes the block-7/16 mix)")),
+    ("builder_candidates.json", dict(
+        run="builder-candidates", gpu="A10G", drafter="block-16 bigdata", builder="best-first, candidate sweep",
+        prompts="4 x 384", note="gsm8k only; DDTree control identical (10.024) across all four arms")),
+    ("beam_candidates.json", dict(
+        run="beam-candidates", gpu="A10G", drafter="block-16 bigdata", builder="beam + flat, C sweep",
+        prompts="10 x 512", note="C=256 costs 3.6% accept vs 512; C=2048 gains 4% at 4x build")),
+    ("depth_sweep.json", dict(
+        run="depth-sweep", gpu="A10G", drafter="block-16 bigdata", builder="beam + flat, min_width sweep",
+        prompts="10 x 512", note="depth truncation: no measurable gain; budget-16 chain fix is large")),
+    ("shape_fanout_full.json", dict(
+        run="shape-fanout-full", gpu="A10G", drafter="block-16 bigdata", builder="beam vs best-first-precomputed",
+        prompts="10 x 512", note="best-first shape +4.3% accept at fanout=budget")),
+    ("shape_fanout48.json", dict(
+        run="shape-fanout-48", gpu="A10G", drafter="block-16 bigdata", builder="beam vs best-first-precomputed",
+        prompts="10 x 512", note="fanout capped at 48; +3.9% accept, build 1.44s -> 1.02s")),
+    ("sweep_h100_bigdata.json", dict(
+        run="sweep-h100-bigdata", gpu="H100", drafter="block-16 bigdata", builder="beam + flat, precomputed C=512",
+        prompts="12 x 512", note="budget sweep; WRONG checkpoint for headline comparison (see _best runs)")),
+    ("sweep_a10g_bigdata.json", dict(
+        run="sweep-a10g-bigdata", gpu="A10G", drafter="block-16 bigdata", builder="beam + flat, precomputed C=512",
+        prompts="12 x 512", note="budget sweep + the A10G half of the hardware comparison")),
+    ("sweep_a10g_replicate.json", dict(
+        run="sweep-a10g-replicate", gpu="A10G", drafter="block-16 bigdata", builder="beam + flat, precomputed C=512",
+        prompts="12 x 512", note="accidental exact replicate of the row above - the noise-floor measurement")),
+    ("sweep_bestfirst_bigdata.json", dict(
+        run="sweep-bestfirst-bigdata", gpu="A10G", drafter="block-16 bigdata", builder="best-first-precomputed C=512",
+        prompts="12 x 512", note="tree shape: +6.2% acceptance over beam @64 (6/6), +2.3% @128")),
+
+    # --- the _best checkpoint control triple. Same GPU, checkpoint and prompts;
+    # only the tree builder differs, so the deltas are attributable to it alone.
+    ("best_ctrl_incumbent.json", dict(
+        run="best-CONTROL-incumbent", gpu="H100", drafter="block-16 best", builder="in-loop matmul, union C=2048",
+        prompts="12 x 512", note="**reproduces published headline to +0.1% - validates the whole chain**")),
+    ("best_beam_precomputed.json", dict(
+        run="best-beam-precomputed", gpu="H100", drafter="block-16 best", builder="beam + flat, precomputed C=512",
+        prompts="12 x 512", note="cost of the candidate-scheme change alone: -4.1% accept, -52% build")),
+    ("best_bestfirst_a10g.json", dict(
+        run="best-bestfirst-a10g", gpu="A10G", drafter="block-16 best", builder="best-first-precomputed C=512",
+        prompts="12 x 512", note="cross-GPU vs the control - indicative only, superseded by final_benchmark")),
+    ("depth_minwidth1.json", dict(
+        run="depth-minwidth1", gpu="A10G", drafter="block-16 bigdata", builder="beam + flat, min_width 1 vs 2",
+        prompts="12 x 512", note="the budget-16 chain fix measured against the ACTUAL old behaviour: +1.5%")),
+    ("horizon.json", dict(
+        run="horizon-block7-16", gpu="A10G", drafter="block-7 released vs block-16 bigdata", builder="best-first (lazy)",
+        prompts="6 x 384", note="identical prompts; ddtree_tb64 is the 0.0% control")),
 ]
 
 PRETTY = {
@@ -97,8 +149,12 @@ def rows_for(path, meta):
     for dataset, agg in data.items():
         if not isinstance(agg, dict):
             continue
-        # confidence run nests one level deeper: dataset -> mode -> methods
-        modes = agg if any(k in ("beam", "confidence") for k in agg) else {"": agg}
+        # Several runs nest one level deeper: dataset -> arm -> methods, where the
+        # arm key is the swept value (mode name, candidate count, min_width...).
+        # Detect structurally rather than by name: an arm is a dict of methods, so
+        # it is the level that owns "baseline".
+        nested = all(isinstance(v, dict) and "baseline" in v for v in agg.values()) if agg else False
+        modes = agg if nested else {"": agg}
         for mode, methods in modes.items():
             if not isinstance(methods, dict):
                 continue

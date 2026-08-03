@@ -161,6 +161,7 @@ def build_markov_tree(
     wave: int = 16,
     exact: bool = True,
     candidates: int = 2048,
+    per_depth: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
     """Batched-sync equivalent of build_markov_tree_sequential.
 
@@ -174,6 +175,11 @@ def build_markov_tree(
     pops against the cache. Pop order is unchanged, tables are a pure function of
     (depth, token), so the resulting tree is IDENTICAL to the sequential builder
     (asserted in test_batched_builder.py) at ~budget/wave syncs instead of budget.
+
+    Kept as the reference implementation for build_markov_tree_precomputed, which
+    resolves every table before the walk starts; `per_depth=True` switches the
+    candidate restriction to that builder's per-depth top-C so the two can be
+    compared on identical candidate sets.
     """
     depth_limit, vocab_size = base_logits.shape
     if budget <= 0:
@@ -203,16 +209,20 @@ def build_markov_tree(
     # union of the per-depth top-C, gather those w2 rows ONCE per round, and every
     # subsequent table is a matmul against a ~17MB slice with a cheaper top-k.
     # Set candidates=0 for the exact full-vocab path.
-    if candidates and candidates < vocab_size:
-        per_depth = min(int(candidates), vocab_size)
-        cand_ids = torch.unique(torch.topk(logits, k=per_depth, dim=-1).indices.reshape(-1))
+    if per_depth:
+        active_vocab = int(min(candidates or vocab_size, vocab_size))
+        logits_active, cand_ids = torch.topk(logits, k=active_vocab, dim=-1)   # [L, C]
+        w2_active = w2.index_select(0, cand_ids.reshape(-1)).view(depth_limit, active_vocab, -1).float()
+    elif candidates and candidates < vocab_size:
+        per_depth_k = min(int(candidates), vocab_size)
+        cand_ids = torch.unique(torch.topk(logits, k=per_depth_k, dim=-1).indices.reshape(-1))
         w2_active = w2.index_select(0, cand_ids).float()      # [U, R] gathered once
         logits_active = logits.index_select(1, cand_ids)      # [L, U]
     else:
         cand_ids = None
         w2_active = w2.float()
         logits_active = logits
-    active_topk = min(topk, w2_active.shape[0])
+    active_topk = min(topk, logits_active.shape[-1])
 
     table_cache: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {}
     sync_count = 0
@@ -225,11 +235,22 @@ def build_markov_tree(
             return
         depths = torch.tensor([d for d, _ in missing], dtype=torch.long, device=device)
         tokens = torch.tensor([t for _, t in missing], dtype=torch.long, device=device)
-        bias = w1[tokens].float() @ w2_active.T                       # [M, U] - one matmul
-        corrected = logits_active.index_select(0, depths - 1) + bias  # [M, U]
+        rows = depths - 1
+        if per_depth:
+            # each depth owns its candidate set, so the matmul is batched per row
+            bias = torch.bmm(
+                w1[tokens].float().unsqueeze(1),                       # [M, 1, R]
+                w2_active.index_select(0, rows).transpose(1, 2),       # [M, R, C]
+            ).squeeze(1)                                              # [M, C]
+        else:
+            bias = w1[tokens].float() @ w2_active.T                   # [M, U] - one matmul
+        corrected = logits_active.index_select(0, rows) + bias        # [M, U]
         log_probs = corrected - torch.logsumexp(corrected, dim=-1, keepdim=True)
         top_vals, top_idx = torch.topk(log_probs, k=active_topk, dim=-1)
-        top_ids = top_idx if cand_ids is None else cand_ids[top_idx]  # map back to vocab
+        if per_depth:                                                 # map back to vocab
+            top_ids = cand_ids.index_select(0, rows).gather(1, top_idx)
+        else:
+            top_ids = top_idx if cand_ids is None else cand_ids[top_idx]
         stacked = torch.stack([top_vals, top_ids.float()]).cpu().numpy()  # ONE sync
         sync_count += 1
         for i, pair in enumerate(missing):
@@ -277,7 +298,7 @@ def build_markov_tree(
         child_maps[parent_index][token_id] = current_index
         node_count += 1
 
-        if rank + 1 < topk:
+        if rank + 1 < active_topk:
             sibling_logw = logw - float(table_vals[parent_index][rank]) + float(table_vals[parent_index][rank + 1])
             tiebreak += 1
             heapq.heappush(heap, (-sibling_logw, tiebreak, parent_index, depth, rank + 1, sibling_logw))
@@ -354,18 +375,37 @@ def build_markov_tree(
 
 
 
-def flat_width_schedule(budget: int, depth_limit: int) -> list[int]:
-    """Uniform width per depth, remainder spread over the shallow depths.
+# A flat schedule is only meaningful while every depth it covers gets more than
+# one slot. Below that it silently degenerates into a chain (see the docstring).
+FLAT_MIN_WIDTH = 2
+
+
+def flat_width_schedule(budget: int, depth_limit: int, min_width: int = FLAT_MIN_WIDTH) -> list[int]:
+    """Uniform width per depth, over as many depths as the budget can afford to branch.
 
     Measured hit data (experiments/analyze_tree_slots.py) shows the drafter is
     right 87% of the time at depth 1 but only 30% at depth 16, so budget belongs
     spread across depths rather than front-loaded. Flat matched or beat every
     geometric schedule tested.
+
+    Spreading has a floor, though. Dividing a budget of 16 over 16 depths returns
+    [1,1,...,1] - a chain with zero branching, which is strictly worse than the
+    same 16 nodes spent on a shallower tree, and was the cause of the budget-16
+    regression in RESULTS.md §2. So depth is capped at budget // min_width rather
+    than fixed at the drafter's horizon: trading depth for width is the correct
+    response to a tight budget, and thinning every level to 1 is not.
+
+    min_width doubles as the depth-truncation knob. At budget 64 the default
+    min_width=2 leaves the full 16 depths untouched ([4]*16); min_width=5 caps the
+    tree at 12 levels ([6,6,6,6,5,...]), shortening the builder's dependency chain
+    and moving the freed slots to depths that are actually reached.
     """
-    base, extra = divmod(int(budget), int(depth_limit))
-    if base == 0:
-        return [1] * min(int(budget), int(depth_limit))
-    return [base + (1 if i < extra else 0) for i in range(int(depth_limit))]
+    budget, depth_limit = int(budget), int(depth_limit)
+    if budget <= 0 or depth_limit <= 0:
+        return []
+    depth = max(1, min(depth_limit, budget // max(int(min_width), 1)))
+    base, extra = divmod(budget, depth)
+    return [base + (1 if i < extra else 0) for i in range(depth)]
 
 
 def confidence_width_schedule(accept_probs, budget: int, depth_limit: int) -> list[int]:
@@ -429,6 +469,141 @@ def beam_width_schedule(budget: int, depth_limit: int, decay: float = 0.6) -> li
 _BEAM_GRAPHS: dict = {}
 
 
+def _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root):
+    """Every branch-conditional transition the beam can ever take, computed at once.
+
+    build_beam_tree recomputes `w1[surviving_tokens] @ w2_cand[d].T` inside the
+    level loop, so the matmul at depth d cannot start until the top-k at depth
+    d-1 has landed: 16 serially dependent (gather -> matmul -> logsumexp -> top-k)
+    chains per round, which is what the CUDA-graph profile in RESULTS.md §12 found
+    the builder bound by.
+
+    That dependency is avoidable. A parent at depth d is *always* an element of
+    the depth d-1 candidate set - the beam has nothing else to select from - so
+    the transition is a finite C x C table per depth, and the whole [L-1, C, C]
+    stack is one batched matmul with no dependency on the beam at all. The
+    logsumexp normaliser is a function of (depth, parent slot) only, so it folds
+    into the same precompute. What remains in the loop is a gather, an add and a
+    top-k over width x C - no matmul, no softmax.
+
+    The cost is that this computes transitions for all C possible parents when
+    only `width` of them are used, so the precompute is O(L C^2 R) against the
+    loop's O(L width C R). That trade only pays because C is small (256) and
+    because the C^2 work is one independent kernel while the width work is a
+    16-long dependency chain. Keep C small: this table is the reason C is now a
+    quadratic knob rather than a linear one.
+
+    Returns (root_logp [C], table_logp [L-1, C, C]), both log-normalised over the
+    candidate set exactly as build_beam_tree normalises over its active set.
+    """
+    root = logits_cand[0] + (w1_root.float() @ w2_cand[0].T).reshape(-1)
+    root_logp = root - torch.logsumexp(root, dim=-1)
+
+    # [L-1, C, R] @ [L-1, R, C] -> [L-1, C, C], plus the per-depth base logits
+    table = torch.baddbmm(logits_cand[1:].unsqueeze(1), w1_cand[:-1], w2_cand[1:].transpose(1, 2))
+    table_logp = table - torch.logsumexp(table, dim=-1, keepdim=True)
+    return root_logp, table_logp
+
+
+def _beam_level_loop(root_logp, table_logp, widths, candidate_count):
+    """Level-synchronous expansion against precomputed tables.
+
+    Carries *candidate slots* rather than vocab ids, since that is what indexes
+    the transition tables; the caller maps slots back to vocab once at the end.
+    """
+    parent_locals, slots = [], []
+    previous_slots, scores = None, None
+    for depth_idx, width in enumerate(widths):
+        if depth_idx == 0:
+            path_scores = root_logp                                    # [C]
+        else:
+            path_scores = scores.unsqueeze(1) + table_logp[depth_idx - 1].index_select(0, previous_slots)
+        top_vals, top_flat = torch.topk(path_scores.reshape(-1), width)
+        parent_locals.append(torch.div(top_flat, candidate_count, rounding_mode="floor"))
+        previous_slots = top_flat % candidate_count
+        slots.append(previous_slots)
+        scores = top_vals
+    return torch.cat(parent_locals), torch.cat(slots)
+
+
+def _depth_of_node(widths, device):
+    """Depth index of every emitted node, so slots can be mapped back to vocab."""
+    return torch.repeat_interleave(
+        torch.arange(len(widths), device=device),
+        torch.tensor(widths, device=device),
+    )
+
+
+def _resolve_beam_widths(widths, budget, depth_limit, min_width, candidate_count=None):
+    """Schedule, truncated to the drafter's horizon and to what the level can hold.
+
+    A level can emit at most parents x C nodes, so a width past that would ask
+    top-k for more elements than exist. Only reachable at budgets far above 256,
+    but the clamp has to happen before the CUDA-graph key is built, since it is
+    part of the captured shape.
+    """
+    widths = list(widths) if widths else flat_width_schedule(budget, depth_limit, min_width)
+    widths = [w for w in widths[:depth_limit] if w > 0]
+    if candidate_count is None:
+        return widths
+    resolved, available = [], 1
+    for width in widths:
+        width = min(width, available * candidate_count)
+        resolved.append(width)
+        available = width
+    return resolved
+
+
+@torch.inference_mode()
+def build_beam_tree_precomputed(
+    base_logits: torch.Tensor,
+    budget: int,
+    markov_head,
+    root_token_id: int,
+    candidates: int = 512,
+    widths: list[int] | None = None,
+    min_width: int = FLAT_MIN_WIDTH,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
+    """build_beam_tree with the branch transitions hoisted out of the level loop.
+
+    Algebraically identical to build_beam_tree at the same per-depth candidate
+    set - same scores, same top-k, same tie-break - but NOT bitwise identical:
+    the [C, C] batched matmul and the [width, C] one it replaces reduce in
+    different orders, so trees can diverge where two paths score within float32
+    epsilon of each other. test_beam_precompute.py measures that divergence rate.
+
+    Candidates are per-depth ([L, C]) rather than build_beam_tree's deduped union,
+    both because the table needs a compile-time shape and because each depth
+    getting its own top-C is slightly tighter than sharing one pool.
+    """
+    depth_limit, vocab_size = base_logits.shape
+    candidate_count = int(min(candidates or vocab_size, vocab_size))
+    widths = _resolve_beam_widths(widths, budget, depth_limit, min_width, candidate_count)
+    if budget <= 0 or not widths:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long),
+                [-1], [dict()], visibility)
+
+    logits = base_logits.float()
+    device = logits.device
+    w1, w2 = markov_head.markov_w1.weight, markov_head.markov_w2.weight
+
+    logits_cand, cand_ids = torch.topk(logits[: len(widths)], k=candidate_count, dim=-1)
+    flat_ids = cand_ids.reshape(-1)
+    w1_cand = w1.index_select(0, flat_ids).view(len(widths), candidate_count, -1).float()
+    w2_cand = w2.index_select(0, flat_ids).view(len(widths), candidate_count, -1).float()
+    w1_root = w1.index_select(0, torch.tensor([int(root_token_id)], device=device))
+
+    root_logp, table_logp = _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root)
+    parent_local, slots = _beam_level_loop(root_logp, table_logp, widths, candidate_count)
+    token_ids = flat_ids.gather(0, _depth_of_node(widths, device) * candidate_count + slots)
+
+    packed = torch.stack([parent_local, token_ids]).cpu().numpy()   # ONE transfer
+    return _tree_structure_from_levels(packed[0], packed[1], widths)
+
+
+
 def _tree_structure_from_levels(parent_local_np, token_np, widths):
     """Shared CPU tail: level-local (parent, token) pairs -> tree arrays."""
     total = int(sum(widths))
@@ -471,25 +646,59 @@ def _tree_structure_from_levels(parent_local_np, token_np, widths):
 
 
 @torch.inference_mode()
-def build_beam_tree_graphed(
+def build_markov_tree_precomputed(
     base_logits: torch.Tensor,
     budget: int,
     markov_head,
     root_token_id: int,
     candidates: int = 512,
-    widths: list[int] | None = None,
+    max_fanout: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
-    """CUDA-graph replay of the level-synchronous beam expansion.
+    """Best-first markov tree at ONE sync per round - batched *before* the walk.
 
-    Profiling (H100, budget 64): the level loop is ~100% of tree_build, and a
-    captured graph replays it in 1.61ms vs 3.98ms eager - 60% saved. Graph capture
-    needs STATIC shapes, which only became possible once the width schedule went
-    flat; the adaptive schedules could not be captured.
+    build_markov_tree cannot know node n+1's table until node n is popped, so it
+    interleaves GPU work with the heap: a big prefetch per outer iteration plus a
+    single-pair `ensure_tables` for every child whose table the prefetch missed.
+    That is what leaves it at ~48 syncs/round (RESULTS.md §4).
 
-    Candidates are per-depth here (fixed [depth, C]) rather than a deduped union,
-    so every buffer has a compile-time shape. That makes the candidate set
-    slightly different from the eager path - and slightly tighter, since each
-    depth gets its own top-C instead of sharing one pooled set.
+    `wave` mode attacked this by batching *around* the walk - pop K, materialize
+    all K, resolve their children together - and destroyed acceptance (11.45 ->
+    8.13, FINDINGS §9), because deferring pushes means a successor cannot outrank
+    later members of its own wave. That is precisely the ordering best-first is.
+
+    The fix is to batch *before* the walk instead. A node at depth d always holds
+    an element of the depth d-1 candidate set - the builder has nothing else to
+    select from - so the complete set of transitions best-first could ever ask for
+    is the same finite [L-1, C, C] tensor `_beam_transition_tables` already builds
+    for the beam, and it depends on the candidate sets alone, not on which nodes
+    get expanded. Resolve it, take the per-row top-k once, ship it to CPU, and the
+    heap walk becomes pure CPU work against resident arrays: `ensure_tables` is not
+    batched but *deleted*, since a cache miss is no longer possible.
+
+    Pop order is therefore untouched - this is strict best-first, not an
+    approximation of it - so acceptance should match build_markov_tree at the same
+    candidate set rather than beam's (11.09 vs 11.45 at budget 64, gsm8k).
+
+    The cost is the one flagged in _beam_transition_tables: O(L C^2 R) to build
+    transitions for all C possible parents when at most `budget` are used, plus a
+    [1 + (L-1)C, k] top-k slice to transfer. Both are quadratic in C, so this
+    builder wants C in the hundreds - unlike build_markov_tree, which defaults to
+    2048 because its per-node matmul is only linear in C. §4 measured that
+    shrinking C is nearly free for acceptance (11.45 @ 2048 -> 11.35 @ 512), which
+    is what makes the trade available at all.
+
+    Unlike the beam builders this cannot be CUDA-graphed: the walk is a Python
+    heap with data-dependent control flow. It has no GPU work left to capture,
+    though, so that is a forfeit rather than a regression.
+
+    max_fanout bounds how many siblings ONE node may contribute, which is what
+    sets the transferred slice width. Defaulting it to `budget` is the safe bound
+    (a single parent could in principle own the whole tree) but it makes transfer
+    volume scale with budget, and that is what turned the measured +2.9% acceptance
+    at budget 64 into -13.8% speed at budget 128 on gsm8k. Real best-first trees
+    are nowhere near that concentrated - the measured depth profile at budget 64 is
+    [16, 18, 15, 12, 3] - so a cap well below budget is normally free. Set 0 for
+    the safe bound.
     """
     depth_limit, vocab_size = base_logits.shape
     if budget <= 0:
@@ -498,11 +707,131 @@ def build_beam_tree_graphed(
         return (torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long),
                 [-1], [dict()], visibility)
 
-    widths = list(widths) if widths else flat_width_schedule(budget, depth_limit)
-    widths = [w for w in widths[:depth_limit] if w > 0]
+    logits = base_logits.float()
+    device = logits.device
+    w1, w2 = markov_head.markov_w1.weight, markov_head.markov_w2.weight
+    candidate_count = int(min(candidates or vocab_size, vocab_size))
+    topk = min(int(max_fanout) or budget, budget, candidate_count)
+
+    logits_cand, cand_ids = torch.topk(logits, k=candidate_count, dim=-1)   # [L, C]
+    flat_ids = cand_ids.reshape(-1)
+    w1_cand = w1.index_select(0, flat_ids).view(depth_limit, candidate_count, -1).float()
+    w2_cand = w2.index_select(0, flat_ids).view(depth_limit, candidate_count, -1).float()
+    w1_root = w1.index_select(0, torch.tensor([int(root_token_id)], device=device))
+
+    root_logp, table_logp = _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root)
+    root_vals, root_slots = torch.topk(root_logp, k=topk, dim=-1)          # [k]
+    table_vals, table_slots = torch.topk(table_logp, k=topk, dim=-1)       # [L-1, C, k]
+
+    # ONE transfer for every table the walk can reach. Slots and token ids ride
+    # through float32 exactly (vocab << 2^24), the same trick build_markov_tree
+    # uses to pack its own top-k into a single stacked tensor.
+    flat = torch.cat([
+        root_vals, table_vals.reshape(-1),
+        root_slots.float(), table_slots.reshape(-1).float(),
+        flat_ids.float(),
+    ]).cpu().numpy()
+
+    table_count = 1 + (depth_limit - 1) * candidate_count
+    span = table_count * topk
+    vals = flat[:span].reshape(table_count, topk)
+    slots = flat[span:2 * span].reshape(table_count, topk).astype(np.int64)
+    cand = flat[2 * span:].reshape(depth_limit, candidate_count).astype(np.int64)
+
+    # Row of the children table for a node at `depth` holding candidate `slot`.
+    # Root is row 0; a node at depth d indexes table_logp[d-1], which exists only
+    # while d <= L-1 - exactly the depth_limit guard below.
+    def child_row(depth, slot):
+        return 1 + (depth - 1) * candidate_count + slot
+
+    node_token_ids_np = np.empty(budget, dtype=np.int64)
+    node_depths_np = np.empty(budget, dtype=np.int64)
+    parents_np = np.empty(budget + 1, dtype=np.int32)
+    parents_np[0] = -1
+    child_maps: list[dict[int, int]] = [dict()]
+    node_rows = np.zeros(budget + 1, dtype=np.int64)   # node 0 is the root -> row 0
+    node_count = 0
+    tiebreak = 0
+
+    first_logw = float(vals[0, 0])
+    heap: list[tuple[float, int, int, int, int, float]] = [(-first_logw, tiebreak, 0, 1, 0, first_logw)]
+
+    while heap and node_count < budget:
+        _, _, parent_index, depth, rank, logw = heapq.heappop(heap)
+        parent_row = int(node_rows[parent_index])
+        slot = int(slots[parent_row, rank])
+        token_id = int(cand[depth - 1, slot])
+
+        current_index = node_count + 1
+        node_token_ids_np[node_count] = token_id
+        node_depths_np[node_count] = depth
+        parents_np[current_index] = parent_index
+        child_maps.append(dict())
+        child_maps[parent_index][token_id] = current_index
+        node_count += 1
+
+        if rank + 1 < topk:
+            sibling_logw = logw - float(vals[parent_row, rank]) + float(vals[parent_row, rank + 1])
+            tiebreak += 1
+            heapq.heappush(heap, (-sibling_logw, tiebreak, parent_index, depth, rank + 1, sibling_logw))
+
+        if depth < depth_limit:
+            row = child_row(depth, slot)
+            node_rows[current_index] = row
+            child_logw = logw + float(vals[row, 0])
+            tiebreak += 1
+            heapq.heappush(heap, (-child_logw, tiebreak, current_index, depth + 1, 0, child_logw))
+
+    current_length = 1 + node_count
+    visibility_np = np.zeros((current_length, current_length), dtype=np.bool_)
+    visibility_np[0, 0] = True
+    for index in range(1, current_length):
+        parent_index = int(parents_np[index])
+        visibility_np[index, :index] = visibility_np[parent_index, :index]
+        visibility_np[index, index] = True
+
+    return (
+        torch.from_numpy(node_token_ids_np[:node_count]),
+        torch.from_numpy(node_depths_np[:node_count]),
+        parents_np[:current_length].tolist(),
+        child_maps,
+        torch.from_numpy(visibility_np),
+    )
+
+
+@torch.inference_mode()
+def build_beam_tree_graphed(
+    base_logits: torch.Tensor,
+    budget: int,
+    markov_head,
+    root_token_id: int,
+    candidates: int = 512,
+    widths: list[int] | None = None,
+    min_width: int = FLAT_MIN_WIDTH,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
+    """CUDA-graph replay of the level-synchronous beam expansion.
+
+    Profiling (H100, budget 64): the level loop is ~100% of tree_build, and a
+    captured graph replays it in 1.61ms vs 3.98ms eager - 60% saved. Graph capture
+    needs STATIC shapes, which only became possible once the width schedule went
+    flat; the adaptive schedules could not be captured.
+
+    The captured body is _beam_transition_tables + _beam_level_loop, so the graph
+    replays one batched matmul followed by a chain of gather/add/top-k rather than
+    a chain of matmuls - the graph removes launch overhead, the precompute removes
+    the work each link was waiting on.
+    """
+    depth_limit, vocab_size = base_logits.shape
+    C = int(min(candidates or vocab_size, vocab_size))
+    widths = _resolve_beam_widths(widths, budget, depth_limit, min_width, C)
+    if budget <= 0 or not widths:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long),
+                [-1], [dict()], visibility)
+
     device = base_logits.device
     w1, w2 = markov_head.markov_w1.weight, markov_head.markov_w2.weight
-    C = int(min(candidates, vocab_size))
     key = (tuple(widths), C, int(w1.shape[1]), device, id(markov_head))
 
     entry = _BEAM_GRAPHS.get(key)
@@ -510,14 +839,16 @@ def build_beam_tree_graphed(
         entry = _capture_beam_graph(w1, w2, widths, C, device)
         _BEAM_GRAPHS[key] = entry
     if entry is False:                       # capture failed once; stay on eager
-        return build_beam_tree(base_logits, budget, markov_head, root_token_id,
-                               candidates=candidates, widths=widths)
+        return build_beam_tree_precomputed(base_logits, budget, markov_head, root_token_id,
+                                           candidates=candidates, widths=widths)
 
     logits = base_logits.float()
     top_vals, top_ids = torch.topk(logits[: len(widths)], k=C, dim=-1)
+    flat_ids = top_ids.reshape(-1)
     entry["cand_ids"].copy_(top_ids)
     entry["logits_cand"].copy_(top_vals)
-    entry["w2_cand"].copy_(w2.index_select(0, top_ids.reshape(-1)).view(len(widths), C, -1).float())
+    entry["w1_cand"].copy_(w1.index_select(0, flat_ids).view(len(widths), C, -1).float())
+    entry["w2_cand"].copy_(w2.index_select(0, flat_ids).view(len(widths), C, -1).float())
     entry["root"].fill_(int(root_token_id))
     entry["graph"].replay()
 
@@ -533,29 +864,22 @@ def _capture_beam_graph(w1, w2, widths, C, device):
     buf = dict(
         cand_ids=torch.zeros(len(widths), C, dtype=torch.long, device=device),
         logits_cand=torch.zeros(len(widths), C, dtype=torch.float32, device=device),
+        w1_cand=torch.zeros(len(widths), C, rank, dtype=torch.float32, device=device),
         w2_cand=torch.zeros(len(widths), C, rank, dtype=torch.float32, device=device),
         root=torch.zeros(1, dtype=torch.long, device=device),
         out_parent=torch.zeros(total, dtype=torch.long, device=device),
         out_token=torch.zeros(total, dtype=torch.long, device=device),
+        depth_of=_depth_of_node(widths, device),
         widths=widths,
     )
 
     def body():
-        tokens = buf["root"]
-        scores = torch.zeros(1, dtype=torch.float32, device=device)
-        offset = 0
-        for depth_idx, width in enumerate(widths):
-            bias = w1[tokens].float() @ buf["w2_cand"][depth_idx].T
-            corrected = buf["logits_cand"][depth_idx].unsqueeze(0) + bias
-            log_probs = corrected - torch.logsumexp(corrected, dim=-1, keepdim=True)
-            path = scores.unsqueeze(1) + log_probs
-            vals, flat = torch.topk(path.reshape(-1), width)
-            parent_local = torch.div(flat, C, rounding_mode="floor")
-            tokens = buf["cand_ids"][depth_idx].gather(0, flat % C)
-            scores = vals
-            buf["out_parent"][offset:offset + width].copy_(parent_local)
-            buf["out_token"][offset:offset + width].copy_(tokens)
-            offset += width
+        root_logp, table_logp = _beam_transition_tables(
+            buf["logits_cand"], buf["w1_cand"], buf["w2_cand"], w1.index_select(0, buf["root"]),
+        )
+        parent_local, slots = _beam_level_loop(root_logp, table_logp, widths, C)
+        buf["out_parent"].copy_(parent_local)
+        buf["out_token"].copy_(buf["cand_ids"].reshape(-1).gather(0, buf["depth_of"] * C + slots))
 
     try:
         stream = torch.cuda.Stream()
@@ -585,6 +909,8 @@ def build_beam_tree(
     candidates: int = 2048,
     widths: list[int] | None = None,
     flat: bool = False,
+    min_width: int = FLAT_MIN_WIDTH,
+    per_depth: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor]:
     """Level-synchronous (beam) markov tree - one batched expansion per DEPTH.
 
@@ -600,6 +926,11 @@ def build_beam_tree(
 
     The cost is that budget is allocated by a fixed schedule rather than
     adaptively by path score (beam search, not best-first).
+
+    Kept as the reference implementation for build_beam_tree_precomputed, which
+    hoists the per-level matmul out of the loop; `per_depth=True` switches the
+    candidate restriction to the precomputed builder's per-depth top-C so the two
+    can be compared on identical candidate sets.
     """
     depth_limit, vocab_size = base_logits.shape
     if budget <= 0:
@@ -613,44 +944,58 @@ def build_beam_tree(
     w1 = markov_head.markov_w1.weight
     w2 = markov_head.markov_w2.weight
 
-    if candidates and candidates < vocab_size:
-        cand_ids = torch.unique(torch.topk(logits, k=min(int(candidates), vocab_size), dim=-1).indices.reshape(-1))
-        w2_active = w2.index_select(0, cand_ids).float()
-        logits_active = logits.index_select(1, cand_ids)
-    else:
-        cand_ids = None
-        w2_active = w2.float()
-        logits_active = logits
-    active_vocab = logits_active.shape[1]
-
     # Measured hit data (experiments/analyze_tree_slots.py) shows the drafter is
     # confident near the root (87% of depth-1 acceptances are its top pick) and
     # uncertain deep (30% at depth 16), so a decaying schedule is backwards - an
     # explicit measured schedule beats any geometric curve.
     if widths:
-        widths = list(widths)
+        widths = list(widths)[:depth_limit]
     elif flat:
-        widths = flat_width_schedule(budget, depth_limit)
+        widths = flat_width_schedule(budget, depth_limit, min_width)
     else:
-        widths = beam_width_schedule(budget, depth_limit, decay)
-    widths = widths[:depth_limit]
+        widths = beam_width_schedule(budget, depth_limit, decay)[:depth_limit]
+    widths = [w for w in widths if w > 0]
+    if not widths:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long),
+                [-1], [dict()], visibility)
+
+    if per_depth:
+        active_vocab = int(min(candidates or vocab_size, vocab_size))
+        logits_active, cand_ids = torch.topk(logits[: len(widths)], k=active_vocab, dim=-1)
+        w2_active = w2.index_select(0, cand_ids.reshape(-1)).view(len(widths), active_vocab, -1).float()
+    elif candidates and candidates < vocab_size:
+        cand_ids = torch.unique(torch.topk(logits, k=min(int(candidates), vocab_size), dim=-1).indices.reshape(-1))
+        w2_active = w2.index_select(0, cand_ids).float()
+        logits_active = logits.index_select(1, cand_ids)
+        active_vocab = logits_active.shape[1]
+    else:
+        cand_ids = None
+        w2_active = w2.float()
+        logits_active = logits
+        active_vocab = logits_active.shape[1]
 
     parent_tokens = torch.tensor([int(root_token_id)], dtype=torch.long, device=device)
     parent_scores = torch.zeros(1, dtype=torch.float32, device=device)
     levels = []  # (parent_local_idx, token_id) per level, all still on GPU
 
     for depth_idx, width in enumerate(widths):
-        bias = w1[parent_tokens].float() @ w2_active.T                 # [P, U]
+        level_w2 = w2_active[depth_idx] if per_depth else w2_active
+        bias = w1[parent_tokens].float() @ level_w2.T                  # [P, U]
         corrected = logits_active[depth_idx].unsqueeze(0) + bias       # [P, U]
         log_probs = corrected - torch.logsumexp(corrected, dim=-1, keepdim=True)
         path_scores = parent_scores.unsqueeze(1) + log_probs           # [P, U]
 
-        flat = path_scores.reshape(-1)
-        k = min(width, flat.numel())
-        top_vals, top_flat = torch.topk(flat, k)
+        flat_scores = path_scores.reshape(-1)   # not `flat` - that is the schedule flag
+        k = min(width, flat_scores.numel())
+        top_vals, top_flat = torch.topk(flat_scores, k)
         parent_local = torch.div(top_flat, active_vocab, rounding_mode="floor")
         token_local = top_flat % active_vocab
-        token_ids = token_local if cand_ids is None else cand_ids[token_local]
+        if cand_ids is None:
+            token_ids = token_local
+        else:
+            token_ids = cand_ids[depth_idx][token_local] if per_depth else cand_ids[token_local]
 
         levels.append((parent_local, token_ids))
         parent_tokens = token_ids            # stays on GPU - no sync
@@ -722,6 +1067,10 @@ def ddtree_markov_generate(
     beam_widths: list[int] | None = None,
     beam_flat: bool = False,
     beam_cuda_graph: bool = False,
+    beam_precompute: bool = True,
+    beam_candidates: int = 512,
+    beam_max_fanout: int = 0,
+    beam_min_width: int = FLAT_MIN_WIDTH,
     collect_stats: bool = False,
 ) -> SimpleNamespace:
     """ddtree_generate adapted to the DSpark drafter, with selectable tree builder.
@@ -817,8 +1166,19 @@ def ddtree_markov_generate(
             if tree_mode == "beam" and beam_cuda_graph and base_logits.is_cuda:
                 node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree_graphed(
                     base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
-                    candidates=min(tree_candidates, 512),
-                    widths=beam_widths or (flat_width_schedule(tree_budget, block_size) if beam_flat else None),
+                    candidates=beam_candidates, widths=beam_widths, min_width=beam_min_width,
+                )
+            elif tree_mode == "beam" and beam_precompute:
+                node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree_precomputed(
+                    base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
+                    candidates=beam_candidates, widths=beam_widths, min_width=beam_min_width,
+                )
+            elif tree_mode == "exact-precomputed":
+                # best-first shape, but every children table already resolved, so
+                # the heap costs one transfer instead of ~budget round-trips
+                node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_markov_tree_precomputed(
+                    base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
+                    candidates=beam_candidates, max_fanout=beam_max_fanout,
                 )
             elif tree_mode == "confidence" and model.confidence_head is not None:
                 # one cheap chain sample to get prev-token context for the head
@@ -837,7 +1197,8 @@ def ddtree_markov_generate(
             elif tree_mode in ("beam", "confidence"):
                 node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_beam_tree(
                     base_logits[0], tree_budget, model.markov_head, int(root_token[0, 0]),
-                    decay=beam_decay, candidates=tree_candidates, widths=beam_widths, flat=beam_flat
+                    decay=beam_decay, candidates=tree_candidates, widths=beam_widths,
+                    flat=beam_flat, min_width=beam_min_width,
                 )
             else:
                 node_token_ids, node_depths, parents, child_maps, visibility_cpu = build_markov_tree(

@@ -1,0 +1,972 @@
+{
+  "gpu": "H100",
+  "sglang_image": "lmsysorg/sglang:v0.5.16-cu129",
+  "target": "Qwen/Qwen3-4B",
+  "dataset": "sharegpt",
+  "concurrency": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32
+  ],
+  "arms": {
+    "dspark_capped": {
+      "algo": "DSPARK",
+      "draft": "deepseek-ai/dspark_qwen3_4b_block7",
+      "overlap": false,
+      "capped": true
+    },
+    "tree_w17_noov": {
+      "algo": "SPARKED",
+      "draft": null,
+      "overlap": false,
+      "plugin": true,
+      "num_draft_tokens": 17,
+      "capped": true
+    },
+    "tree_w65_noov": {
+      "algo": "SPARKED",
+      "draft": null,
+      "overlap": false,
+      "plugin": true,
+      "num_draft_tokens": 65,
+      "capped": true
+    },
+    "tree_w129_noov": {
+      "algo": "SPARKED",
+      "draft": null,
+      "overlap": false,
+      "plugin": true,
+      "num_draft_tokens": 129,
+      "capped": true
+    }
+  },
+  "blocked_arms": {
+    "ddtree_noov": "no DDTREE builtin; needs a plugin via SpeculativeAlgorithm.register(). Same plugin as sparked_noov with build_ddtree_tree swapped in for the markov builder \u2014 one plugin unblocks both arms.",
+    "sparked_noov": "plugin not yet written. Verify path is reusable (see above); the work is a V2 worker plus a SpecInput subclass. Overlap stays off regardless: the builder syncs at int(root_token_id) in and .cpu().numpy() out (ddtree_markov.py:851,855), plus the numpy heapq walk in the shipped exact-precomputed arm."
+  },
+  "results": {
+    "dspark_capped": {
+      "1": {
+        "output_throughput": 507.7233090744844,
+        "mean_tpot_ms": 2.608777104430691,
+        "p99_tpot_ms": 7.601385124979032,
+        "mean_ttft_ms": 14.046842208336408,
+        "mean_itl_ms": 1.901302770557603,
+        "accept_length": 3.7634419348390966,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 506.5495774668798,
+            "mean_tpot_ms": 2.610530715866472,
+            "p99_tpot_ms": 7.601385124979032,
+            "mean_ttft_ms": 15.524686895832751,
+            "mean_itl_ms": 1.901302770557603,
+            "accept_length": 3.7533614288581174,
+            "completed": 96
+          },
+          {
+            "output_throughput": 507.7233090744844,
+            "mean_tpot_ms": 2.608777104430691,
+            "p99_tpot_ms": 7.73306180000972,
+            "mean_ttft_ms": 14.046842208336408,
+            "mean_itl_ms": 1.9044079240616212,
+            "accept_length": 3.7634419348390966,
+            "completed": 96
+          },
+          {
+            "output_throughput": 512.3465906929264,
+            "mean_tpot_ms": 2.5778752545866452,
+            "p99_tpot_ms": 7.141404124992333,
+            "mean_ttft_ms": 13.958209489590109,
+            "mean_itl_ms": 1.8871572971360162,
+            "accept_length": 3.7667842171801182,
+            "completed": 96
+          }
+        ]
+      },
+      "2": {
+        "output_throughput": 961.7596655429589,
+        "mean_tpot_ms": 2.701293712041011,
+        "p99_tpot_ms": 7.631054349999999,
+        "mean_ttft_ms": 17.072748499999808,
+        "mean_itl_ms": 1.9884839196680384,
+        "accept_length": 3.7640807228436093,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 929.0249664692137,
+            "mean_tpot_ms": 2.754119337749107,
+            "p99_tpot_ms": 7.724270649991638,
+            "mean_ttft_ms": 20.092201374999636,
+            "mean_itl_ms": 2.0461570331959074,
+            "accept_length": 3.764644351464435,
+            "completed": 96
+          },
+          {
+            "output_throughput": 961.7596655429589,
+            "mean_tpot_ms": 2.701293712041011,
+            "p99_tpot_ms": 7.631054349999999,
+            "mean_ttft_ms": 17.039516781248192,
+            "mean_itl_ms": 1.9884839196680384,
+            "accept_length": 3.7640807228436093,
+            "completed": 96
+          },
+          {
+            "output_throughput": 962.7586119965445,
+            "mean_tpot_ms": 2.693584071353282,
+            "p99_tpot_ms": 7.387689499991266,
+            "mean_ttft_ms": 17.072748499999808,
+            "mean_itl_ms": 1.9862186993382485,
+            "accept_length": 3.763838249917136,
+            "completed": 96
+          }
+        ]
+      },
+      "4": {
+        "output_throughput": 1755.0696333233861,
+        "mean_tpot_ms": 2.9231236192725207,
+        "p99_tpot_ms": 8.389633375000788,
+        "mean_ttft_ms": 17.828347083330698,
+        "mean_itl_ms": 2.1452684439140985,
+        "accept_length": 3.767912230072644,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 1679.8386510298435,
+            "mean_tpot_ms": 4.5831432986934875,
+            "p99_tpot_ms": 16.093081827782918,
+            "mean_ttft_ms": 19.446494614581294,
+            "mean_itl_ms": 2.2395611740616093,
+            "accept_length": 3.7657316795630407,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1760.3218342494204,
+            "mean_tpot_ms": 2.9137559344800947,
+            "p99_tpot_ms": 8.303988647237915,
+            "mean_ttft_ms": 17.659015468752298,
+            "mean_itl_ms": 2.138952220763727,
+            "accept_length": 3.767912230072644,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1755.0696333233861,
+            "mean_tpot_ms": 2.9231236192725207,
+            "p99_tpot_ms": 8.389633375000788,
+            "mean_ttft_ms": 17.828347083330698,
+            "mean_itl_ms": 2.1452684439140985,
+            "accept_length": 3.7682041520959673,
+            "completed": 96
+          }
+        ]
+      },
+      "8": {
+        "output_throughput": 2828.2718233124797,
+        "mean_tpot_ms": 3.2914573249105166,
+        "p99_tpot_ms": 10.552888558334907,
+        "mean_ttft_ms": 20.75641039584042,
+        "mean_itl_ms": 2.4329887110544584,
+        "accept_length": 3.7661426012700594,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 2805.5719140240267,
+            "mean_tpot_ms": 3.316017539619549,
+            "p99_tpot_ms": 10.552888558334907,
+            "mean_ttft_ms": 21.078347104161566,
+            "mean_itl_ms": 2.4527726940225856,
+            "accept_length": 3.7675270143877735,
+            "completed": 96
+          },
+          {
+            "output_throughput": 2833.31050787177,
+            "mean_tpot_ms": 3.2914573249105166,
+            "p99_tpot_ms": 10.60365059998389,
+            "mean_ttft_ms": 20.75641039584042,
+            "mean_itl_ms": 2.429605951236723,
+            "accept_length": 3.7661426012700594,
+            "completed": 96
+          },
+          {
+            "output_throughput": 2828.2718233124797,
+            "mean_tpot_ms": 3.288881007808377,
+            "p99_tpot_ms": 10.5430204916549,
+            "mean_ttft_ms": 20.68239767709083,
+            "mean_itl_ms": 2.4329887110544584,
+            "accept_length": 3.7652044116427565,
+            "completed": 96
+          }
+        ]
+      },
+      "16": {
+        "output_throughput": 3941.665588543546,
+        "mean_tpot_ms": 4.161607991756272,
+        "p99_tpot_ms": 13.39051066665414,
+        "mean_ttft_ms": 35.29019012499764,
+        "mean_itl_ms": 3.0221449990236207,
+        "accept_length": 3.756370081531372,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 3504.4960792699662,
+            "mean_tpot_ms": 14.130839020353054,
+            "p99_tpot_ms": 279.3843425000088,
+            "mean_ttft_ms": 36.71536290624999,
+            "mean_itl_ms": 3.452890156812758,
+            "accept_length": 3.760571778015594,
+            "completed": 96
+          },
+          {
+            "output_throughput": 3941.665588543546,
+            "mean_tpot_ms": 4.034834159980192,
+            "p99_tpot_ms": 11.753503400020778,
+            "mean_ttft_ms": 34.07312053125248,
+            "mean_itl_ms": 2.9633206941310415,
+            "accept_length": 3.756370081531372,
+            "completed": 96
+          },
+          {
+            "output_throughput": 3990.6091723946174,
+            "mean_tpot_ms": 4.161607991756272,
+            "p99_tpot_ms": 13.39051066665414,
+            "mean_ttft_ms": 35.29019012499764,
+            "mean_itl_ms": 3.0221449990236207,
+            "accept_length": 3.7558638216762854,
+            "completed": 96
+          }
+        ]
+      },
+      "32": {
+        "output_throughput": 5339.393398476793,
+        "mean_tpot_ms": 6.358725828176227,
+        "p99_tpot_ms": 52.50067017504978,
+        "mean_ttft_ms": 97.43697389583635,
+        "mean_itl_ms": 3.4865775514753703,
+        "accept_length": 3.7536820484093085,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 5042.573758837412,
+            "mean_tpot_ms": 11.195713890052561,
+            "p99_tpot_ms": 137.9940827499919,
+            "mean_ttft_ms": 97.43697389583635,
+            "mean_itl_ms": 3.7408845956823438,
+            "accept_length": 3.754463842872731,
+            "completed": 96
+          },
+          {
+            "output_throughput": 5377.023158749738,
+            "mean_tpot_ms": 6.03537494718354,
+            "p99_tpot_ms": 51.41142312501177,
+            "mean_ttft_ms": 94.1398194687461,
+            "mean_itl_ms": 3.214500229116951,
+            "accept_length": 3.7536820484093085,
+            "completed": 96
+          },
+          {
+            "output_throughput": 5339.393398476793,
+            "mean_tpot_ms": 6.358725828176227,
+            "p99_tpot_ms": 52.50067017504978,
+            "mean_ttft_ms": 100.83799059374716,
+            "mean_itl_ms": 3.4865775514753703,
+            "accept_length": 3.7484341115991326,
+            "completed": 96
+          }
+        ]
+      }
+    },
+    "tree_w17_noov": {
+      "1": {
+        "output_throughput": 302.25887706584973,
+        "mean_tpot_ms": 4.187607634763513,
+        "p99_tpot_ms": 6.3191651000046525,
+        "mean_ttft_ms": 13.960421822916125,
+        "mean_itl_ms": 3.2508529905619525,
+        "accept_length": 1.8324106037907901,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 302.22410237722994,
+            "mean_tpot_ms": 4.187607634763513,
+            "p99_tpot_ms": 6.206745349997787,
+            "mean_ttft_ms": 14.000702364582729,
+            "mean_itl_ms": 3.2508529905619525,
+            "accept_length": 1.8207787125807082,
+            "completed": 96
+          },
+          {
+            "output_throughput": 302.25887706584973,
+            "mean_tpot_ms": 4.185003631225583,
+            "p99_tpot_ms": 6.3191651000046525,
+            "mean_ttft_ms": 13.960421822916125,
+            "mean_itl_ms": 3.2507147990887426,
+            "accept_length": 1.836457723100957,
+            "completed": 96
+          },
+          {
+            "output_throughput": 302.3026034377234,
+            "mean_tpot_ms": 4.19446846221557,
+            "p99_tpot_ms": 6.436931524984855,
+            "mean_ttft_ms": 13.755894510416292,
+            "mean_itl_ms": 3.251291431926659,
+            "accept_length": 1.8324106037907901,
+            "completed": 96
+          }
+        ]
+      },
+      "2": {
+        "output_throughput": 542.481149707552,
+        "mean_tpot_ms": 4.662255236961794,
+        "p99_tpot_ms": 7.598575340894987,
+        "mean_ttft_ms": 16.575234697914592,
+        "mean_itl_ms": 3.6057846553482333,
+        "accept_length": 1.8353377707617946,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 542.481149707552,
+            "mean_tpot_ms": 4.662255236961794,
+            "p99_tpot_ms": 8.074787342011287,
+            "mean_ttft_ms": 17.21988117708643,
+            "mean_itl_ms": 3.6057846553482333,
+            "accept_length": 1.833638874630295,
+            "completed": 96
+          },
+          {
+            "output_throughput": 532.6836049561681,
+            "mean_tpot_ms": 4.744488643851483,
+            "p99_tpot_ms": 7.598575340894987,
+            "mean_ttft_ms": 16.575234697914592,
+            "mean_itl_ms": 3.6759645709481497,
+            "accept_length": 1.8358576001249123,
+            "completed": 96
+          },
+          {
+            "output_throughput": 550.8062117887305,
+            "mean_tpot_ms": 4.61196911575388,
+            "p99_tpot_ms": 7.328157097739759,
+            "mean_ttft_ms": 16.202389729165507,
+            "mean_itl_ms": 3.555027401225848,
+            "accept_length": 1.8353377707617946,
+            "completed": 96
+          }
+        ]
+      },
+      "4": {
+        "output_throughput": 969.2029724906473,
+        "mean_tpot_ms": 5.140105661735999,
+        "p99_tpot_ms": 8.310705911906245,
+        "mean_ttft_ms": 16.95880681249425,
+        "mean_itl_ms": 4.012146609459722,
+        "accept_length": 1.838236911906712,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 949.0525314700807,
+            "mean_tpot_ms": 7.913169863942247,
+            "p99_tpot_ms": 24.819870697455894,
+            "mean_ttft_ms": 17.615130177085565,
+            "mean_itl_ms": 4.117176945107417,
+            "accept_length": 1.8381623961460587,
+            "completed": 96
+          },
+          {
+            "output_throughput": 969.2029724906473,
+            "mean_tpot_ms": 5.140105661735999,
+            "p99_tpot_ms": 8.310705911906245,
+            "mean_ttft_ms": 16.95880681249425,
+            "mean_itl_ms": 4.012146609459722,
+            "accept_length": 1.838236911906712,
+            "completed": 96
+          },
+          {
+            "output_throughput": 980.6460147554484,
+            "mean_tpot_ms": 5.129226412444007,
+            "p99_tpot_ms": 8.145179934769715,
+            "mean_ttft_ms": 16.765821020833016,
+            "mean_itl_ms": 3.98535817026473,
+            "accept_length": 1.8385578062650183,
+            "completed": 96
+          }
+        ]
+      },
+      "8": {
+        "output_throughput": 1368.1548904671042,
+        "mean_tpot_ms": 7.1999638594705955,
+        "p99_tpot_ms": 12.611811528567566,
+        "mean_ttft_ms": 21.236148541672623,
+        "mean_itl_ms": 5.384932733456279,
+        "accept_length": 1.8434866125681133,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 1378.8986572105869,
+            "mean_tpot_ms": 7.1999638594705955,
+            "p99_tpot_ms": 18.181792242778872,
+            "mean_ttft_ms": 20.741882625003427,
+            "mean_itl_ms": 5.344005365534799,
+            "accept_length": 1.8434866125681133,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1320.7515972407346,
+            "mean_tpot_ms": 7.0755673682417095,
+            "p99_tpot_ms": 12.611811528567566,
+            "mean_ttft_ms": 21.236148541672623,
+            "mean_itl_ms": 5.402317843187227,
+            "accept_length": 1.8428628691043514,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1368.1548904671042,
+            "mean_tpot_ms": 7.260743155383783,
+            "p99_tpot_ms": 12.511192392843498,
+            "mean_ttft_ms": 21.271664624998483,
+            "mean_itl_ms": 5.384932733456279,
+            "accept_length": 1.845388470563227,
+            "completed": 96
+          }
+        ]
+      },
+      "16": {
+        "output_throughput": 1779.8255892606162,
+        "mean_tpot_ms": 9.380771273494766,
+        "p99_tpot_ms": 17.085856494642215,
+        "mean_ttft_ms": 36.249944000002664,
+        "mean_itl_ms": 7.048686636580593,
+        "accept_length": 1.8430897779519515,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 1561.7125729355607,
+            "mean_tpot_ms": 41.210596345766824,
+            "p99_tpot_ms": 783.3253196249852,
+            "mean_ttft_ms": 36.98744546875332,
+            "mean_itl_ms": 8.305187065632408,
+            "accept_length": 1.8441989366916782,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1779.8255892606162,
+            "mean_tpot_ms": 9.380771273494766,
+            "p99_tpot_ms": 17.026101682139938,
+            "mean_ttft_ms": 36.249944000002664,
+            "mean_itl_ms": 7.048686636580593,
+            "accept_length": 1.8430897779519515,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1791.24204379701,
+            "mean_tpot_ms": 9.330474182350734,
+            "p99_tpot_ms": 17.085856494642215,
+            "mean_ttft_ms": 36.02053902083213,
+            "mean_itl_ms": 6.984537237958335,
+            "accept_length": 1.8421361847130016,
+            "completed": 96
+          }
+        ]
+      },
+      "32": {
+        "output_throughput": 1993.9707783089482,
+        "mean_tpot_ms": 16.471017251990407,
+        "p99_tpot_ms": 59.1634275999552,
+        "mean_ttft_ms": 73.87674185417481,
+        "mean_itl_ms": 10.603591317368185,
+        "accept_length": 1.840330572804862,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 1908.8101077788165,
+            "mean_tpot_ms": 25.63856108175855,
+            "p99_tpot_ms": 249.6484186000255,
+            "mean_ttft_ms": 76.2454356979158,
+            "mean_itl_ms": 11.313135142058997,
+            "accept_length": 1.8411735199481263,
+            "completed": 96
+          },
+          {
+            "output_throughput": 2000.3303213288793,
+            "mean_tpot_ms": 16.471017251990407,
+            "p99_tpot_ms": 59.1634275999552,
+            "mean_ttft_ms": 72.82334286459265,
+            "mean_itl_ms": 10.552021777283537,
+            "accept_length": 1.840330572804862,
+            "completed": 96
+          },
+          {
+            "output_throughput": 1993.9707783089482,
+            "mean_tpot_ms": 15.874908408910992,
+            "p99_tpot_ms": 47.05824823750642,
+            "mean_ttft_ms": 73.87674185417481,
+            "mean_itl_ms": 10.603591317368185,
+            "accept_length": 1.839587272608724,
+            "completed": 96
+          }
+        ]
+      }
+    },
+    "tree_w65_noov": {
+      "1": {
+        "output_throughput": 289.06884195344844,
+        "mean_tpot_ms": 4.485638124922188,
+        "p99_tpot_ms": 7.004250475026195,
+        "mean_ttft_ms": 13.647981302082002,
+        "mean_itl_ms": 3.402916101703185,
+        "accept_length": 1.9046846481443926,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 289.06884195344844,
+            "mean_tpot_ms": 4.485638124922188,
+            "p99_tpot_ms": 6.787293085714905,
+            "mean_ttft_ms": 13.882935531250714,
+            "mean_itl_ms": 3.402916101703185,
+            "accept_length": 1.9027580612451835,
+            "completed": 96
+          },
+          {
+            "output_throughput": 288.62794897538083,
+            "mean_tpot_ms": 4.497850612136057,
+            "p99_tpot_ms": 7.274737124983942,
+            "mean_ttft_ms": 13.647981302082002,
+            "mean_itl_ms": 3.4094284171729226,
+            "accept_length": 1.9046846481443926,
+            "completed": 96
+          },
+          {
+            "output_throughput": 289.2438785246206,
+            "mean_tpot_ms": 4.484923381335837,
+            "p99_tpot_ms": 7.004250475026195,
+            "mean_ttft_ms": 13.616039468747232,
+            "mean_itl_ms": 3.4022244812866167,
+            "accept_length": 1.9053268437774624,
+            "completed": 96
+          }
+        ]
+      },
+      "2": {
+        "output_throughput": 435.64409764812615,
+        "mean_tpot_ms": 5.980964644202401,
+        "p99_tpot_ms": 9.39902185004513,
+        "mean_ttft_ms": 16.225295781249944,
+        "mean_itl_ms": 4.527794026307235,
+        "accept_length": 1.9025852315901455,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 414.5365894227616,
+            "mean_tpot_ms": 6.265832688758705,
+            "p99_tpot_ms": 14.374730196519776,
+            "mean_ttft_ms": 17.700556322915045,
+            "mean_itl_ms": 4.745881912670841,
+            "accept_length": 1.9013706265359378,
+            "completed": 96
+          },
+          {
+            "output_throughput": 439.88019292705974,
+            "mean_tpot_ms": 5.964784267837358,
+            "p99_tpot_ms": 9.136694021424113,
+            "mean_ttft_ms": 16.225295781249944,
+            "mean_itl_ms": 4.474179531460178,
+            "accept_length": 1.9056190707856968,
+            "completed": 96
+          },
+          {
+            "output_throughput": 435.64409764812615,
+            "mean_tpot_ms": 5.980964644202401,
+            "p99_tpot_ms": 9.39902185004513,
+            "mean_ttft_ms": 16.119882218747605,
+            "mean_itl_ms": 4.527794026307235,
+            "accept_length": 1.9025852315901455,
+            "completed": 96
+          }
+        ]
+      },
+      "4": {
+        "output_throughput": 731.9285337960467,
+        "mean_tpot_ms": 7.11588466119997,
+        "p99_tpot_ms": 11.41837109999244,
+        "mean_ttft_ms": 18.920402604166497,
+        "mean_itl_ms": 5.348588949772162,
+        "accept_length": 1.9060313355643443,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 725.726410874615,
+            "mean_tpot_ms": 8.40647374460031,
+            "p99_tpot_ms": 18.438094227966094,
+            "mean_ttft_ms": 19.686246406247204,
+            "mean_itl_ms": 5.391646669559502,
+            "accept_length": 1.9050549514197594,
+            "completed": 96
+          },
+          {
+            "output_throughput": 733.1529932341018,
+            "mean_tpot_ms": 7.1142463135150145,
+            "p99_tpot_ms": 11.41837109999244,
+            "mean_ttft_ms": 18.88816252083932,
+            "mean_itl_ms": 5.339574575233256,
+            "accept_length": 1.9060313355643443,
+            "completed": 96
+          },
+          {
+            "output_throughput": 731.9285337960467,
+            "mean_tpot_ms": 7.11588466119997,
+            "p99_tpot_ms": 11.122108630552436,
+            "mean_ttft_ms": 18.920402604166497,
+            "mean_itl_ms": 5.348588949772162,
+            "accept_length": 1.9067914106971764,
+            "completed": 96
+          }
+        ]
+      },
+      "8": {
+        "output_throughput": 862.0781661261439,
+        "mean_tpot_ms": 11.10823189186147,
+        "p99_tpot_ms": 17.249461997226312,
+        "mean_ttft_ms": 25.79540681249289,
+        "mean_itl_ms": 8.563604308201354,
+        "accept_length": 1.8889223661745507,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 857.8665343163101,
+            "mean_tpot_ms": 11.269027068533763,
+            "p99_tpot_ms": 18.153832249970062,
+            "mean_ttft_ms": 25.903576520834786,
+            "mean_itl_ms": 8.615252284606191,
+            "accept_length": 1.8971674131461083,
+            "completed": 96
+          },
+          {
+            "output_throughput": 863.0211029576697,
+            "mean_tpot_ms": 11.10823189186147,
+            "p99_tpot_ms": 17.249461997226312,
+            "mean_ttft_ms": 25.788696208336386,
+            "mean_itl_ms": 8.560828455196381,
+            "accept_length": 1.8889223661745507,
+            "completed": 96
+          },
+          {
+            "output_throughput": 862.0781661261439,
+            "mean_tpot_ms": 11.101330978215813,
+            "p99_tpot_ms": 17.110389938875414,
+            "mean_ttft_ms": 25.79540681249289,
+            "mean_itl_ms": 8.563604308201354,
+            "accept_length": 1.882106702690082,
+            "completed": 96
+          }
+        ]
+      },
+      "16": {
+        "output_throughput": 954.9256410126417,
+        "mean_tpot_ms": 18.79125035395193,
+        "p99_tpot_ms": 31.176240464285694,
+        "mean_ttft_ms": 46.081235510418615,
+        "mean_itl_ms": 13.989754469299186,
+        "accept_length": 1.8740805031088599,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 949.0513335182657,
+            "mean_tpot_ms": 25.33886002771167,
+            "p99_tpot_ms": 198.95715267500947,
+            "mean_ttft_ms": 46.721329250001276,
+            "mean_itl_ms": 14.258534215231082,
+            "accept_length": 1.8779905408310555,
+            "completed": 96
+          },
+          {
+            "output_throughput": 967.7557652516631,
+            "mean_tpot_ms": 18.79125035395193,
+            "p99_tpot_ms": 31.176240464285694,
+            "mean_ttft_ms": 46.081235510418615,
+            "mean_itl_ms": 13.989754469299186,
+            "accept_length": 1.8740805031088599,
+            "completed": 96
+          },
+          {
+            "output_throughput": 954.9256410126417,
+            "mean_tpot_ms": 18.609928811896584,
+            "p99_tpot_ms": 30.71456823749027,
+            "mean_ttft_ms": 45.63312619790949,
+            "mean_itl_ms": 13.911922334942512,
+            "accept_length": 1.870903160797624,
+            "completed": 96
+          }
+        ]
+      },
+      "32": {
+        "output_throughput": 990.2007543177416,
+        "mean_tpot_ms": 35.42428454584422,
+        "p99_tpot_ms": 74.71307332501732,
+        "mean_ttft_ms": 93.30407920833512,
+        "mean_itl_ms": 24.279091871881157,
+        "accept_length": 1.8624427960920853,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 970.8086904665684,
+            "mean_tpot_ms": 43.38215933007515,
+            "p99_tpot_ms": 243.2963568999693,
+            "mean_ttft_ms": 92.73153245833872,
+            "mean_itl_ms": 24.971106697982176,
+            "accept_length": 1.8673509892699869,
+            "completed": 96
+          },
+          {
+            "output_throughput": 990.2007543177416,
+            "mean_tpot_ms": 35.17408344599091,
+            "p99_tpot_ms": 65.89105255004581,
+            "mean_ttft_ms": 103.73524442708515,
+            "mean_itl_ms": 24.001761239422923,
+            "accept_length": 1.8624427960920853,
+            "completed": 96
+          },
+          {
+            "output_throughput": 991.6388031382012,
+            "mean_tpot_ms": 35.42428454584422,
+            "p99_tpot_ms": 74.71307332501732,
+            "mean_ttft_ms": 93.30407920833512,
+            "mean_itl_ms": 24.279091871881157,
+            "accept_length": 1.859936517002021,
+            "completed": 96
+          }
+        ]
+      }
+    },
+    "tree_w129_noov": {
+      "1": {
+        "output_throughput": 228.77092815527868,
+        "mean_tpot_ms": 5.768553522245888,
+        "p99_tpot_ms": 8.77670234999428,
+        "mean_ttft_ms": 13.885797416666476,
+        "mean_itl_ms": 4.31838887323715,
+        "accept_length": 1.9204475467049886,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 228.77092815527868,
+            "mean_tpot_ms": 5.759474130584838,
+            "p99_tpot_ms": 8.77670234999428,
+            "mean_ttft_ms": 14.086633281250815,
+            "mean_itl_ms": 4.31838887323715,
+            "accept_length": 1.9136727571340588,
+            "completed": 96
+          },
+          {
+            "output_throughput": 227.9203410378468,
+            "mean_tpot_ms": 5.792458867833919,
+            "p99_tpot_ms": 8.699030125004724,
+            "mean_ttft_ms": 13.885797416666476,
+            "mean_itl_ms": 4.335847286450419,
+            "accept_length": 1.9204475467049886,
+            "completed": 96
+          },
+          {
+            "output_throughput": 228.9104529324306,
+            "mean_tpot_ms": 5.768553522245888,
+            "p99_tpot_ms": 8.887501275015095,
+            "mean_ttft_ms": 13.703656947917272,
+            "mean_itl_ms": 4.317856609080081,
+            "accept_length": 1.9257500170846715,
+            "completed": 96
+          }
+        ]
+      },
+      "2": {
+        "output_throughput": 370.29196526276377,
+        "mean_tpot_ms": 6.840243696991284,
+        "p99_tpot_ms": 10.893294945748988,
+        "mean_ttft_ms": 17.939905864585864,
+        "mean_itl_ms": 5.328592310370967,
+        "accept_length": 1.8843568806051,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 368.56109615332764,
+            "mean_tpot_ms": 6.8446705592486445,
+            "p99_tpot_ms": 10.893294945748988,
+            "mean_ttft_ms": 18.769504916669177,
+            "mean_itl_ms": 5.349165046702121,
+            "accept_length": 1.899656166253729,
+            "completed": 96
+          },
+          {
+            "output_throughput": 370.29196526276377,
+            "mean_tpot_ms": 6.840243696991284,
+            "p99_tpot_ms": 10.938007225007595,
+            "mean_ttft_ms": 17.817104614588075,
+            "mean_itl_ms": 5.328592310370967,
+            "accept_length": 1.8843568806051,
+            "completed": 96
+          },
+          {
+            "output_throughput": 370.55932284697343,
+            "mean_tpot_ms": 6.829213956168719,
+            "p99_tpot_ms": 10.671104737485846,
+            "mean_ttft_ms": 17.939905864585864,
+            "mean_itl_ms": 5.324018622640444,
+            "accept_length": 1.87479212399388,
+            "completed": 96
+          }
+        ]
+      },
+      "4": {
+        "output_throughput": 486.84558263773215,
+        "mean_tpot_ms": 10.423776192324068,
+        "p99_tpot_ms": 16.13560509782812,
+        "mean_ttft_ms": 22.53561004166234,
+        "mean_itl_ms": 8.036764898188311,
+        "accept_length": 1.8691052670788944,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 485.58112096941056,
+            "mean_tpot_ms": 11.645047363218536,
+            "p99_tpot_ms": 22.439578052541215,
+            "mean_ttft_ms": 22.99128379166504,
+            "mean_itl_ms": 8.055479877901918,
+            "accept_length": 1.8726241417056424,
+            "completed": 96
+          },
+          {
+            "output_throughput": 487.9854437995141,
+            "mean_tpot_ms": 10.392810785451013,
+            "p99_tpot_ms": 15.735606761115006,
+            "mean_ttft_ms": 22.490952052082253,
+            "mean_itl_ms": 8.016974832176176,
+            "accept_length": 1.8691052670788944,
+            "completed": 96
+          },
+          {
+            "output_throughput": 486.84558263773215,
+            "mean_tpot_ms": 10.423776192324068,
+            "p99_tpot_ms": 16.13560509782812,
+            "mean_ttft_ms": 22.53561004166234,
+            "mean_itl_ms": 8.036764898188311,
+            "accept_length": 1.8664433006734045,
+            "completed": 96
+          }
+        ]
+      },
+      "8": {
+        "output_throughput": 535.7789072457207,
+        "mean_tpot_ms": 18.506640842916436,
+        "p99_tpot_ms": 29.78139009513836,
+        "mean_ttft_ms": 36.921557885419766,
+        "mean_itl_ms": 14.116778330332005,
+        "accept_length": 1.856742934051144,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 535.7789072457207,
+            "mean_tpot_ms": 18.546156443792135,
+            "p99_tpot_ms": 36.931778271426595,
+            "mean_ttft_ms": 36.921557885419766,
+            "mean_itl_ms": 14.116778330332005,
+            "accept_length": 1.8611844773520887,
+            "completed": 96
+          },
+          {
+            "output_throughput": 531.1272392886069,
+            "mean_tpot_ms": 18.506640842916436,
+            "p99_tpot_ms": 29.78139009513836,
+            "mean_ttft_ms": 37.62161707291393,
+            "mean_itl_ms": 14.243434905077034,
+            "accept_length": 1.856742934051144,
+            "completed": 96
+          },
+          {
+            "output_throughput": 565.2558490320683,
+            "mean_tpot_ms": 17.362531029321634,
+            "p99_tpot_ms": 25.72861652498375,
+            "mean_ttft_ms": 33.298434781246534,
+            "mean_itl_ms": 13.342057832989807,
+            "accept_length": 1.8531038671131246,
+            "completed": 96
+          }
+        ]
+      },
+      "16": {
+        "output_throughput": 595.0182394448377,
+        "mean_tpot_ms": 31.935187234109403,
+        "p99_tpot_ms": 49.74568004464024,
+        "mean_ttft_ms": 60.48580743750757,
+        "mean_itl_ms": 23.688336797190296,
+        "accept_length": 1.8492706417510214,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 587.785962548692,
+            "mean_tpot_ms": 38.27925883194928,
+            "p99_tpot_ms": 209.58598009996734,
+            "mean_ttft_ms": 62.47789769792315,
+            "mean_itl_ms": 24.01309125200693,
+            "accept_length": 1.8511477246066403,
+            "completed": 96
+          },
+          {
+            "output_throughput": 595.0182394448377,
+            "mean_tpot_ms": 31.935187234109403,
+            "p99_tpot_ms": 49.74568004464024,
+            "mean_ttft_ms": 60.48580743750757,
+            "mean_itl_ms": 23.688336797190296,
+            "accept_length": 1.8492706417510214,
+            "completed": 96
+          },
+          {
+            "output_throughput": 596.6506970430002,
+            "mean_tpot_ms": 31.85500200152918,
+            "p99_tpot_ms": 49.71774644107378,
+            "mean_ttft_ms": 60.353187739591384,
+            "mean_itl_ms": 23.6158675474072,
+            "accept_length": 1.8477579106568809,
+            "completed": 96
+          }
+        ]
+      },
+      "32": {
+        "output_throughput": 596.482076263262,
+        "mean_tpot_ms": 61.80847559059565,
+        "p99_tpot_ms": 129.42069930005562,
+        "mean_ttft_ms": 119.92042633333237,
+        "mean_itl_ms": 42.182607379800444,
+        "accept_length": 1.844562842002687,
+        "completed": 96,
+        "observations": [
+          {
+            "output_throughput": 586.9940096658537,
+            "mean_tpot_ms": 69.51985927171626,
+            "p99_tpot_ms": 267.3275775749625,
+            "mean_ttft_ms": 119.92042633333237,
+            "mean_itl_ms": 42.95325317823828,
+            "accept_length": 1.846004340841927,
+            "completed": 96
+          },
+          {
+            "output_throughput": 596.6217677713727,
+            "mean_tpot_ms": 61.80847559059565,
+            "p99_tpot_ms": 129.42069930005562,
+            "mean_ttft_ms": 120.33219292709892,
+            "mean_itl_ms": 42.13952311520934,
+            "accept_length": 1.844562842002687,
+            "completed": 96
+          },
+          {
+            "output_throughput": 596.482076263262,
+            "mean_tpot_ms": 61.78175923604776,
+            "p99_tpot_ms": 124.23189245006928,
+            "mean_ttft_ms": 118.27386566667049,
+            "mean_itl_ms": 42.182607379800444,
+            "accept_length": 1.8432778962950063,
+            "completed": 96
+          }
+        ]
+      }
+    }
+  }
+}

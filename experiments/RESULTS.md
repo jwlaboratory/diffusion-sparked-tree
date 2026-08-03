@@ -43,9 +43,9 @@ Best block-16 drafter · **H100** · beam+flat builder · budget 128 · 6 datase
 
 | sparked-tree vs | acceptance | speed |
 |---|---|---|
-| DSpark | **+38.9%** | **+17.1%** |
-| DFlash | **+50.6%** | **+17.8%** |
-| DDTree | **+9.0%** | −0.3% (tied) |
+| DSpark | **+40.3%** | **+18.2%** |
+| DFlash | **+51.2%** | **+17.4%** |
+| DDTree | **+9.9%** | +0.7% (tied — see §12) |
 
 ---
 
@@ -270,16 +270,63 @@ The single positive cell is chat, where round-to-round variance is highest.
 
 ---
 
+## 12. CUDA-GRAPH TREE BUILDER
+
+The beam level loop is ~100% of `tree_build` (H100 profile, budget 64):
+
+| component | ms/round | share |
+|---|---|---|
+| GPU level loop | 3.98 | ~100% |
+| transfer / sync | 0.19 | 5% |
+| Python tree assembly | 0.06 | **2%** |
+
+So the builder is bound by *launching* 16 dependent levels, not by data volume or
+CPU work. Capturing that loop as a CUDA graph and replaying it:
+
+| budget | eager | graphed | saved | `tree_build` | gap to DDTree |
+|---|---|---|---|---|---|
+| 64 | 3.594 ms | **1.093 ms** | **70%** | 0.61s → 0.19s | 6.1x → **1.9x** |
+| 128 | 3.356 ms | **1.570 ms** | 53% | 0.57s → 0.27s | 6.1x → **2.7x** |
+
+Trees are **bit-identical** to the eager path (tokens, depths, parents, visibility
+all equal), so this is pure speed with no effect on acceptance.
+
+Two prerequisites, one of which came free from an earlier finding:
+
+- **Static shapes.** Graph capture requires them. The flat schedule `[4,4,…,4]` is
+  static; the geometric and confidence-adaptive schedules vary per round and
+  **could not be captured**. The change that improved acceptance (§5) is what
+  unlocked the speed fix.
+- **Per-depth candidates instead of a deduped union.** `torch.unique` returns a
+  variable-length tensor, which breaks capture. A fixed `[depth, C]` table is also
+  slightly tighter — each depth gets its own top-C rather than sharing a pool.
+
+Capture happens once per `(widths, C, device)` and is cached; on failure the
+builder logs and falls back to eager permanently rather than retrying per round.
+
+⚠️ **The end-to-end benchmark cannot confirm this.** Per-dataset `tree_build`
+moved in the *wrong* direction on half the datasets (gsm8k 1.88→2.33s while its
+speed improved 11.9%; humaneval 4.10→3.30s while speed dropped 11.9%). Six
+independently-scheduled H100 containers carry ~±12% timing variance, which swamps
+a ~0.4s effect. The isolated microbenchmark is the trustworthy measurement; the
+whole-run speed figure remains **a tie**.
+
+---
+
 ## Bottom line
 
 | claim | status |
 |---|---|
-| Beats **DSpark** (+38.9% acc, +17.1% spd) | ✅ validated, 6/6 datasets |
-| Beats **DFlash** (+50.6%, +17.8%) | ✅ validated, 6/6 |
-| Beats **DDTree** on acceptance (+9.0%) | ✅ validated, 6/6 |
-| Ties DDTree on speed (−0.3%) | ✅ at budget 128; **wins** at 256 |
-| Holds at serving concurrency | ❌ **untested** — all results batch 1; the efficiency math in §9 suggests inversion |
+| Beats **DSpark** (+40.3% acc, +18.2% spd) | ✅ validated, 6/6 datasets |
+| Beats **DFlash** (+51.2%, +17.4%) | ✅ validated, 6/6 |
+| Beats **DDTree** on acceptance (+9.9%) | ✅ validated, 6/6 |
+| Ties DDTree on speed (+0.7%) | ✅ at budget 128; **wins** at 256. Within run-to-run noise — call it a tie |
+| Holds at serving concurrency | ❌ **no** — ties at c≈4 and loses above it (budget 64); inverts at c≈2 (budget 128). §9's efficiency math was right; see `concurrency/FINDINGS.md` §5 |
 
-**Honest framing:** best-in-class for *latency-bound* speculative decoding
-(batch 1 to ~8, interactive / local / low-QPS). Unproven and probably unfavourable
-at high-throughput serving, where a chain's 5× compute efficiency dominates.
+**Honest framing:** best-in-class for *latency-bound* speculative decoding —
+but the useful range is now measured, and it is **batch 1 to ~4**, not ~8
+(c=4 is a tie at budget 64; budget 128 is already losing by c=2).
+Interactive, local, low-QPS. At higher concurrency the chain's 5× compute
+efficiency dominates exactly as §9 predicted, and the tree loses outright: 0.52×
+at c=32 (budget 64), and that is an upper bound that charges the tree nothing for
+building itself.

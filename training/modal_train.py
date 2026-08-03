@@ -48,6 +48,10 @@ hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
 # workspace without H100 access - even for CPU-only functions like publish().
 BIG_GPU = os.environ.get("DDTREE_BIG_GPU", "H100")
 
+# The benchmark GPU is separately selectable so the headline sweep can be run on
+# the reference hardware (NEXT.md: H100) without moving the training pipeline.
+SWEEP_GPU = os.environ.get("DDTREE_SWEEP_GPU", "A10G")
+
 NUM_SAMPLES = 2400          # PerfectBlend rows before the 5% eval split
 CACHE_DIR = "/vol/target_cache_block16"
 CKPT_FINAL = "/vol/ckpt_final/dspark_block16"
@@ -240,11 +244,14 @@ def bench16(
         summary = {}
         for response in data["responses"]:
             for method, result in response.items():
-                row = summary.setdefault(method, {"accept": [], "tpot": [], "tokens": 0, "rounds": 0})
+                row = summary.setdefault(method, {"accept": [], "tpot": [], "tokens": 0, "rounds": 0, "stage": {}})
                 row["accept"].extend(result.acceptance_lengths)
                 row["tpot"].append(result.time_per_output_token)
                 row["tokens"] += result.num_output_tokens
                 row["rounds"] += result.decode_rounds
+                # kept for the stage-time table: which stage the win comes from
+                for stage, elapsed in getattr(result, "stage_times", {}).items():
+                    row["stage"][stage] = row["stage"].get(stage, 0.0) + elapsed
         for method, row in summary.items():
             row["mean_accept"] = sum(row["accept"]) / max(len(row["accept"]), 1)
             row["mean_tpot_ms"] = 1e3 * sum(row["tpot"]) / max(len(row["tpot"]), 1)
@@ -853,9 +860,12 @@ def final_wide(datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
     return results
 
 
-@app.function(image=image, gpu="A10G", timeout=10800, volumes={"/vol": vol, "/hfcache": hf_cache})
+@app.function(image=image, gpu=SWEEP_GPU, timeout=10800, volumes={"/vol": vol, "/hfcache": hf_cache})
 def sweep_one(dataset: str, exp_suffix: str = "", max_samples: int = 8,
-              max_new_tokens: int = 512, tree_budget: str = "16,32,64,128,256"):
+              max_new_tokens: int = 512, tree_budget: str = "16,32,64,128,256",
+              beam_min_width: int = 2, beam_candidates: int = 512, cuda_graph: bool = False,
+              tree_mode: str = "beam", max_fanout: int = 0, precompute: bool = True,
+              tree_candidates: int = 2048, temperature: float = 0.0):
     """DSpark vs DDTree vs sparked-tree across tree budgets, on one dataset.
 
     Tree budget is the verify batch: how many draft nodes the target scores in a
@@ -877,10 +887,16 @@ def sweep_one(dataset: str, exp_suffix: str = "", max_samples: int = 8,
         "--max-samples", str(max_samples),
         "--max-new-tokens", str(max_new_tokens),
         "--tree-budget", tree_budget,
-        "--tree-mode", "beam",
+        "--tree-mode", tree_mode,
         "--beam-widths", "flat",
+        "--beam-min-width", str(beam_min_width),
+        "--beam-candidates", str(beam_candidates),
+        "--beam-max-fanout", str(max_fanout),
+        "--tree-candidates", str(tree_candidates),
+        *([] if precompute else ["--no-beam-precompute"]),
+        *(["--beam-cuda-graph"] if cuda_graph else []),
         "--minimal",
-        "--temperature", "0.0",
+        "--temperature", str(temperature),
         "--disable-cpp-compact-cache",
         "--save-path", save_path,
     ], cwd="/root/ddtree")
@@ -905,7 +921,10 @@ def sweep_one(dataset: str, exp_suffix: str = "", max_samples: int = 8,
 @app.function(image=image, timeout=21600, volumes={"/vol": vol, "/hfcache": hf_cache})
 def sweep_wide(datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
                exp_suffix: str = "", max_samples: int = 8, max_new_tokens: int = 512,
-               tree_budget: str = "16,32,64,128,256"):
+               tree_budget: str = "16,32,64,128,256", beam_min_width: int = 2,
+               beam_candidates: int = 512, cuda_graph: bool = False,
+               tree_mode: str = "beam", max_fanout: int = 0, precompute: bool = True,
+               tree_candidates: int = 2048, temperature: float = 0.0):
     """Full comparison: one GPU container per dataset, all budgets in each."""
     import json
     import os
@@ -914,7 +933,12 @@ def sweep_wide(datasets: str = "humaneval,mbpp,gsm8k,math500,mt-bench,alpaca",
     names = [d.strip() for d in datasets.split(",")]
     budgets = [int(b) for b in tree_budget.split(",")]
     calls = [sweep_one.spawn(dataset=n, exp_suffix=exp_suffix, max_samples=max_samples,
-                             max_new_tokens=max_new_tokens, tree_budget=tree_budget) for n in names]
+                             max_new_tokens=max_new_tokens, tree_budget=tree_budget,
+                             beam_min_width=beam_min_width, beam_candidates=beam_candidates,
+                             cuda_graph=cuda_graph, tree_mode=tree_mode,
+                             max_fanout=max_fanout, precompute=precompute,
+                             tree_candidates=tree_candidates,
+                             temperature=temperature) for n in names]
     print(f"spawned {len(calls)} containers x {len(budgets)} budgets: {names}", flush=True)
 
     results = {}
@@ -1047,15 +1071,17 @@ def queued_final(
 
 @app.function(image=image, gpu="A10G", timeout=14400, volumes={"/vol": vol, "/hfcache": hf_cache})
 def bench_mode_one(dataset: str, exp_suffix: str = "_bigdata", mode: str = "beam",
-                   max_samples: int = 10, max_new_tokens: int = 512, tree_budget: str = "64,128"):
+                   max_samples: int = 10, max_new_tokens: int = 512, tree_budget: str = "64,128",
+                   max_fanout: int = 0):
     """One dataset, one tree-construction mode."""
     import os
     import torch
 
     ckpt = f"{CKPT_FINAL}{exp_suffix}"
-    save_path = f"/root/mode_{dataset}_{mode}.pt"
+    save_path = f"/root/mode_{dataset}_{mode}_{max_fanout}.pt"
     _sh([
         "python", "benchmark.py",
+        "--beam-max-fanout", str(max_fanout),
         "--model-name-or-path", "Qwen/Qwen3-4B",
         "--draft-name-or-path", "z-lab/Qwen3-4B-DFlash-b16",
         "--dspark-name-or-path", ckpt,
@@ -1165,4 +1191,320 @@ def queued_confidence(
     json.dump(results, open(out, "w"), indent=2)
     vol.commit()
     print(f"\nsaved {out}\nCONFIDENCE EXPERIMENT COMPLETE", flush=True)
+    return results
+
+
+@app.function(image=image, gpu="A10G", timeout=7200, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_tree_build(
+    exp_suffix: str = "_bigdata",
+    dataset: str = "gsm8k",
+    budgets: str = "16,64,128,256",
+    candidates: str = "256,512,2048",
+    rounds: int = 60,
+    min_width: int = 2,
+    gpu_label: str = "A10G",
+):
+    """Isolated builder microbenchmark - the only measurement that can see this stage.
+
+    RESULTS.md §12: tree_build is ~1-4 ms/round against a ~500 ms run, and the
+    per-dataset sweep carries ~±12% container variance, so it moved in the WRONG
+    direction on half the datasets while the isolated number was unambiguous. Any
+    claim about builder cost comes from here; the sweep only has to show that
+    end-to-end acceptance and speed did not regress.
+
+    Reports in-loop matmul vs precomputed C x C table vs CUDA-graph replay, at each
+    candidate pool size, plus fidelity of every restricted pool against the exact
+    full-vocab beam.
+    """
+    import json
+    import os
+    import time
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    assert os.path.exists(f"{ckpt}/config.json"), f"{ckpt} not published"
+
+    save_path = "/root/tree_build.json"
+    _sh([
+        "python", "bench_tree_build.py",
+        "--model-name-or-path", "Qwen/Qwen3-4B",
+        "--dspark-name-or-path", ckpt,
+        "--dataset", dataset,
+        "--budgets", budgets,
+        "--candidates", candidates,
+        "--rounds", str(rounds),
+        "--min-width", str(min_width),
+        "--save-path", save_path,
+    ], cwd="/root/ddtree")
+
+    results = json.load(open(save_path))
+    results["gpu"] = gpu_label
+    results["dataset"] = dataset
+
+    os.makedirs("/vol/results", exist_ok=True)
+    out = f"/vol/results/treebuild_{gpu_label}_{int(time.time())}.json"
+    json.dump(results, open(out, "w"), indent=2)
+    vol.commit()
+    print(f"\nsaved {out}\nTREE BUILD MICROBENCH COMPLETE", flush=True)
+    return results
+
+
+@app.function(image=image, gpu=BIG_GPU, timeout=7200, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_tree_build_h100(
+    exp_suffix: str = "_bigdata",
+    dataset: str = "gsm8k",
+    budgets: str = "16,64,128,256",
+    candidates: str = "256,512,2048",
+    rounds: int = 60,
+    min_width: int = 2,
+):
+    """Same microbenchmark on the reference GPU. §12's published numbers are H100."""
+    return bench_tree_build.local(
+        exp_suffix=exp_suffix, dataset=dataset, budgets=budgets, candidates=candidates,
+        rounds=rounds, min_width=min_width, gpu_label="H100",
+    )
+
+
+@app.function(image=image, gpu="A10G", timeout=14400, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_depth_one(dataset: str, exp_suffix: str = "_bigdata", min_width: int = 2,
+                    max_samples: int = 10, max_new_tokens: int = 512, tree_budget: str = "16,32,64,128,256"):
+    """One dataset, one min_width - i.e. one depth/width split of the same budget.
+
+    min_width caps effective depth at budget // min_width. At budget 64: 2 leaves
+    the full 16 depths ([4]*16), 4 also gives 16, 5 truncates to 12 ([6,6,6,6,5...]),
+    8 to 8. This is the experiment that decides whether the deep levels earn their
+    slots or whether the freed budget is worth more spent shallow.
+    """
+    import os
+    import torch
+
+    ckpt = f"{CKPT_FINAL}{exp_suffix}"
+    save_path = f"/root/depth_{dataset}_{min_width}.pt"
+    _sh([
+        "python", "benchmark.py",
+        "--model-name-or-path", "Qwen/Qwen3-4B",
+        "--draft-name-or-path", "z-lab/Qwen3-4B-DFlash-b16",
+        "--dspark-name-or-path", ckpt,
+        "--dataset", dataset,
+        "--max-samples", str(max_samples),
+        "--max-new-tokens", str(max_new_tokens),
+        "--tree-budget", tree_budget,
+        "--tree-mode", "beam",
+        "--beam-widths", "flat",
+        "--beam-min-width", str(min_width),
+        "--minimal",
+        "--temperature", "0.0",
+        "--disable-cpp-compact-cache",
+        "--save-path", save_path,
+    ], cwd="/root/ddtree")
+
+    data = torch.load(save_path, weights_only=False)
+    agg = {}
+    for response in data["responses"]:
+        for method, result in response.items():
+            r = agg.setdefault(method, {"accept": [], "tpot": [], "stage": {}})
+            r["accept"].extend(result.acceptance_lengths)
+            r["tpot"].append(result.time_per_output_token)
+            for k, v in getattr(result, "stage_times", {}).items():
+                r["stage"][k] = r["stage"].get(k, 0.0) + v
+    for method, r in agg.items():
+        r["mean_accept"] = sum(r["accept"]) / max(len(r["accept"]), 1)
+        r["mean_tpot_ms"] = 1e3 * sum(r["tpot"]) / max(len(r["tpot"]), 1)
+        del r["accept"], r["tpot"]
+    return agg
+
+
+@app.function(image=image, timeout=28800, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_depth(datasets: str = "humaneval,gsm8k,math500,alpaca", exp_suffix: str = "_bigdata",
+                min_widths: str = "2,5,8", max_samples: int = 10, max_new_tokens: int = 512,
+                tree_budget: str = "16,32,64,128,256"):
+    """Depth-vs-width sweep: is truncating the tree to 12 levels worth the freed budget?
+
+    RESULTS.md §5 measured top-1 HIT RATE per depth, which is not the same question
+    as how much acceptance MASS lives at depths 13-16. Mean acceptance is ~10.6 on
+    gsm8k, so those depths are reached routinely on math and code; truncation is the
+    one change here that can cost acceptance rather than just time, so it ships only
+    if this sweep says it does not.
+    """
+    import json
+    import os
+    import time
+
+    names = [d.strip() for d in datasets.split(",")]
+    widths = [int(w) for w in min_widths.split(",")]
+    budgets = [int(b) for b in tree_budget.split(",")]
+    calls = {
+        (n, w): bench_depth_one.spawn(dataset=n, exp_suffix=exp_suffix, min_width=w,
+                                      max_samples=max_samples, max_new_tokens=max_new_tokens,
+                                      tree_budget=tree_budget)
+        for n in names for w in widths
+    }
+    results = {}
+    for (n, w), call in calls.items():
+        try:
+            results.setdefault(n, {})[str(w)] = call.get()
+            print(f"[done] {n} min_width={w}", flush=True)
+        except Exception as exc:
+            print(f"!! {n}/min_width={w} FAILED: {exc}", flush=True)
+
+    print(f"\n{'dataset':11s} {'budget':>6s} {'min_w':>5s} {'depth':>5s} {'accept':>7s} {'speedup':>8s}")
+    summary = {}
+    for n, arms in results.items():
+        for budget in budgets:
+            key = f"dsparktree_markov_tb{budget}"
+            for w in widths:
+                arm = arms.get(str(w), {})
+                row, base = arm.get(key), arm.get("baseline", {}).get("mean_tpot_ms")
+                if not row or not base:
+                    continue
+                depth = min(16, budget // w)
+                speedup = base / row["mean_tpot_ms"]
+                summary.setdefault(f"tb{budget}_mw{w}", {"acc": [], "spd": []})
+                summary[f"tb{budget}_mw{w}"]["acc"].append(row["mean_accept"])
+                summary[f"tb{budget}_mw{w}"]["spd"].append(speedup)
+                print(f"{n:11s} {budget:6d} {w:5d} {depth:5d} {row['mean_accept']:7.3f} {speedup:7.2f}x")
+
+    print(f"\n{'config':14s} {'accept':>7s} {'speedup':>8s}   (mean over datasets)")
+    for key, v in summary.items():
+        v["mean_accept"] = sum(v["acc"]) / len(v["acc"])
+        v["mean_speedup"] = sum(v["spd"]) / len(v["spd"])
+        print(f"{key:14s} {v['mean_accept']:7.3f} {v['mean_speedup']:7.2f}x")
+
+    os.makedirs("/vol/results", exist_ok=True)
+    out = f"/vol/results/depth_{int(time.time())}.json"
+    json.dump({"per_dataset": results, "summary": summary}, open(out, "w"), indent=2)
+    vol.commit()
+    print(f"\nsaved {out}\nDEPTH SWEEP COMPLETE", flush=True)
+    return {"summary": summary, "per_dataset": results}
+
+
+@app.function(image=image, timeout=28800, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_beam_candidates(datasets: str = "gsm8k,humaneval,alpaca", exp_suffix: str = "_bigdata",
+                          candidate_sizes: str = "256,512,2048", max_samples: int = 10,
+                          max_new_tokens: int = 512, tree_budget: str = "64,128"):
+    """How much acceptance does the beam's candidate pool C actually buy?
+
+    The microbenchmark (bench_tree_build) says the restricted pools are NOT close
+    to the exact full-vocab beam - per-depth top-256 reproduces only ~72% of its
+    nodes, top-2048 ~87%. That metric is harsh, because one swap high in the tree
+    renames every descendant, and RESULTS.md §4 found restriction cost the
+    best-first builder under 2% acceptance. But "cheap and slightly different" and
+    "cheap and worse" are not the same claim, and C is now a QUADRATIC cost knob
+    (the precomputed table is C x C), so the trade has to be measured rather than
+    assumed from bias magnitudes.
+    """
+    import json
+    import os
+    import time
+
+    names = [d.strip() for d in datasets.split(",")]
+    sizes = [int(c) for c in candidate_sizes.split(",")]
+    budgets = [int(b) for b in tree_budget.split(",")]
+    calls = {
+        (n, c): sweep_one.spawn(dataset=n, exp_suffix=exp_suffix, max_samples=max_samples,
+                                max_new_tokens=max_new_tokens, tree_budget=tree_budget,
+                                beam_candidates=c)
+        for n in names for c in sizes
+    }
+    results = {}
+    for (n, c), call in calls.items():
+        try:
+            results.setdefault(n, {})[str(c)] = call.get()
+            print(f"[done] {n} C={c}", flush=True)
+        except Exception as exc:
+            print(f"!! {n}/C={c} FAILED: {exc}", flush=True)
+
+    print(f"\n{'dataset':11s} {'budget':>6s} {'C':>6s} {'accept':>7s} {'speedup':>8s} {'build_s':>8s}")
+    summary = {}
+    for n, arms in results.items():
+        for budget in budgets:
+            key = f"dsparktree_markov_tb{budget}"
+            for c in sizes:
+                arm = arms.get(str(c), {})
+                row, base = arm.get(key), arm.get("baseline", {}).get("mean_tpot_ms")
+                if not row or not base:
+                    continue
+                speedup = base / row["mean_tpot_ms"]
+                bucket = summary.setdefault(f"tb{budget}_C{c}", {"acc": [], "spd": [], "build": []})
+                bucket["acc"].append(row["mean_accept"])
+                bucket["spd"].append(speedup)
+                bucket["build"].append(row["stage"].get("tree_build", 0.0))
+                print(f"{n:11s} {budget:6d} {c:6d} {row['mean_accept']:7.3f} {speedup:7.2f}x "
+                      f"{row['stage'].get('tree_build', 0.0):8.2f}")
+
+    print(f"\n{'config':14s} {'accept':>7s} {'speedup':>8s} {'build_s':>8s}   (mean over datasets)")
+    for key, v in summary.items():
+        v["mean_accept"] = sum(v["acc"]) / len(v["acc"])
+        v["mean_speedup"] = sum(v["spd"]) / len(v["spd"])
+        v["mean_build"] = sum(v["build"]) / len(v["build"])
+        print(f"{key:14s} {v['mean_accept']:7.3f} {v['mean_speedup']:7.2f}x {v['mean_build']:8.2f}")
+
+    os.makedirs("/vol/results", exist_ok=True)
+    out = f"/vol/results/candidates_{int(time.time())}.json"
+    json.dump({"per_dataset": results, "summary": summary}, open(out, "w"), indent=2)
+    vol.commit()
+    print(f"\nsaved {out}\nCANDIDATE SWEEP COMPLETE", flush=True)
+    return {"summary": summary, "per_dataset": results}
+
+
+@app.function(image=image, timeout=28800, volumes={"/vol": vol, "/hfcache": hf_cache})
+def bench_shape(datasets: str = "gsm8k,humaneval,alpaca", exp_suffix: str = "_bigdata",
+                max_samples: int = 10, max_new_tokens: int = 512, tree_budget: str = "64,128",
+                max_fanout: int = 0):
+    """Adaptive best-first shape vs the beam's flat schedule, both over the table.
+
+    The flat schedule was never argued to be a better tree - RESULTS.md §4 measured
+    best-first at 11.45 acceptance against flat beam's 11.09, and the beam won only
+    because best-first cost ~budget dependent GPU round-trips. build_markov_tree_-
+    precomputed removes that cost, so the 3% is available again if the heap and the
+    bigger transfer do not eat it. Arms are identical apart from tree shape.
+    """
+    import json
+    import os
+    import time
+
+    names = [d.strip() for d in datasets.split(",")]
+    modes = ("beam", "exact-precomputed")
+    budgets = [int(b) for b in tree_budget.split(",")]
+    calls = {
+        (n, m): bench_mode_one.spawn(dataset=n, exp_suffix=exp_suffix, mode=m,
+                                     max_samples=max_samples, max_new_tokens=max_new_tokens,
+                                     tree_budget=tree_budget, max_fanout=max_fanout)
+        for n in names for m in modes
+    }
+    results = {}
+    for (n, m), call in calls.items():
+        try:
+            results.setdefault(n, {})[m] = call.get()
+            print(f"[done] {n} {m}", flush=True)
+        except Exception as exc:
+            print(f"!! {n}/{m} FAILED: {exc}", flush=True)
+
+    print(f"\n{'dataset':11s} {'budget':>6s} {'beam acc':>9s} {'bf acc':>9s} {'delta':>7s}  "
+          f"{'beam spd':>9s} {'bf spd':>9s} {'delta':>7s} {'bf build':>9s}")
+    deltas = {"acc": [], "spd": []}
+    for n, arms in results.items():
+        if not all(m in arms for m in modes):
+            continue
+        for budget in budgets:
+            key = f"dsparktree_markov_tb{budget}"
+            beam, best = arms["beam"].get(key), arms["exact-precomputed"].get(key)
+            if not beam or not best:
+                continue
+            sb = arms["beam"]["baseline"]["mean_tpot_ms"] / beam["mean_tpot_ms"]
+            sf = arms["exact-precomputed"]["baseline"]["mean_tpot_ms"] / best["mean_tpot_ms"]
+            da = 100 * (best["mean_accept"] / beam["mean_accept"] - 1)
+            ds = 100 * (sf / sb - 1)
+            deltas["acc"].append(da)
+            deltas["spd"].append(ds)
+            print(f"{n:11s} {budget:6d} {beam['mean_accept']:9.3f} {best['mean_accept']:9.3f} {da:+6.1f}%  "
+                  f"{sb:8.2f}x {sf:8.2f}x {ds:+6.1f}% {best['stage'].get('tree_build', 0):9.2f}")
+    if deltas["acc"]:
+        print(f"\nMEAN  accept {sum(deltas['acc'])/len(deltas['acc']):+.1f}%   "
+              f"speed {sum(deltas['spd'])/len(deltas['spd']):+.1f}%")
+
+    os.makedirs("/vol/results", exist_ok=True)
+    out = f"/vol/results/shape_{int(time.time())}.json"
+    json.dump(results, open(out, "w"), indent=2)
+    vol.commit()
+    print(f"\nsaved {out}\nSHAPE EXPERIMENT COMPLETE", flush=True)
     return results
