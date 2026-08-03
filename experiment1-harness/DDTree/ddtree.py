@@ -102,19 +102,21 @@ def build_ddtree_tree(
     # early return
 
     topk = min(budget, draft_logits.shape[-1]) # this is the amount to sample topK per column
-    depth_limit = int(draft_logits.shape[0]) #this is the horizontal length. cannot go deeper than this
+    depth_limit = int(draft_logits.shape[0]) # this is the horizontal length. cannot go deeper than this anyway
 
-
-    # GPU to CPU copy time
     copy_start = cuda_time()
     logits = draft_logits.float()
     top_logits, top_token_ids = torch.topk(logits, k=topk, dim=-1)
     log_z = torch.logsumexp(logits, dim=-1, keepdim=True)
+    
     top_log_probs_cpu = (top_logits - log_z).to(device="cpu", dtype=torch.float32)
     top_token_ids_cpu = top_token_ids.to(device="cpu", dtype=torch.long)
     build_subtimes["tree_build_copy"] = cuda_time() - copy_start
+
     # copy over the top K from GPu to CPU for every depth
     # we want to do the remaining steps on the CPU not the GPU
+    # GPU to CPU copy time
+
 
     # why cant we do it on GPU? 
     # 1. heap is sequential, most of gpu (parlallel) would be idle

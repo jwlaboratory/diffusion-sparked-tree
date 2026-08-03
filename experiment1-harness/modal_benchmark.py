@@ -1,34 +1,30 @@
 """
-Modal launcher for Experiment 1: acceptance lengths across drafter/corrector/tree.
+Modal launcher for Experiment 1: markov-corrector transfer across drafters.
 
-Two stages run remotely on a single GPU at temperature 0 (greedy):
+ONE stage. The remote GPU function loads the target verifier + a set of draft
+backbones once and runs a `backbone x corrector x verify` matrix via
+`DDTree/run_experiment.py` (imported in-process -- no subprocess, no shell-out).
+The official `DDTree/benchmark.py` is NOT on this path; its equivalence to our
+tree loop is a one-off check, not part of the run.
 
-STAGE A - official reference (unmodified `DDTree/benchmark.py`, sdpa target):
-  - "baseline"      : block_size=1 (autoregressive-style draft) reference
-  - "dflash"        : DFlash block diffusion draft
-  - "ddtree_tbN"    : DFlash + DDTree draft tree, one per tree budget N
-  This validates the harness and cross-checks configs 0/4 below.
+The question this proves (temperature 0, greedy): a markov head is a residual
+correction fitted to the backbone it was trained on. Same head should raise
+acceptance a lot on its OWN backbone and not at all (or hurt) on a FOREIGN one.
 
-STAGE B - the six experiment configs (`DDTree/run_acceptance.py`), which drive
-DSpark and the naive sparked tree the official harness cannot produce:
-  0 dflash_b16            DFlash-b16 drafter, chain              (== reference dflash)
-  2 dspark_b7             DSpark-b7 drafter + markov, chain
-  3 dflash+markov+tree    DFlash-b16 drafter, DSpark markov corrector, tree
-  4 dflash+tree(ddtree)   DFlash-b16 drafter, no corrector, tree (== reference ddtree)
-  5 dspark+tree           DSpark-b7 drafter, no corrector, tree
-  6 dspark+markov+tree    DSpark-b7 drafter, DSpark markov corrector, tree
+Default matrix (the 2x2):
+    dflash.tree          DFlash-b16, no corrector, tree        (foreign OFF, == ddtree)
+    dflash.markov.tree   DFlash-b16 + DSpark-b7 markov, tree   (foreign ON)
+    dspark.tree          DSpark-b7,  no corrector, tree        (own OFF)
+    dspark.markov.tree   DSpark-b7  + DSpark-b7 markov, tree   (own ON)
 
-Configs 3-6 share one tree code path; the only variables are drafter and whether
-the DSpark markov head is passed as corrector. Both drafters share the same target
-(Qwen3-4B), target_layer_ids, and mask token, so the splice (config 3) is well-posed.
-
-We do not run the `--flash-attn` pass: it only affects the timing "best-of" pick,
-not acceptance length, the quantity we care about. See reproduce.md for details.
+Backbones are parameterized by (checkpoint, kind, block_size). Add more, or run a
+b16 checkpoint at block_size=7 to depth-match a foreign backbone to a b7 head --
+that is why there is no separate depth cap. See reproduce.md.
 
 Usage:
     modal run modal_benchmark.py
 
-Config knobs are the UPPERCASE constants below. Nothing here needs a GPU locally.
+All knobs are the UPPERCASE constants below. Nothing here needs a GPU locally.
 """
 
 import json
@@ -37,46 +33,58 @@ from pathlib import Path
 import modal
 
 # --------------------------------------------------------------------------- #
-# Benchmark configuration (this is the "smaller subset")                       #
+# Experiment configuration (all tunables live here)                            #
 # --------------------------------------------------------------------------- #
 
-# One model/draft pair. Qwen3-4B is the smallest pair in the paper's sweep, so
-# it is the cheapest faithful reproduction. All are public on the HF Hub.
-MODEL_NAME = "Qwen/Qwen3-4B"
-DRAFT_NAME = "z-lab/Qwen3-4B-DFlash-b16"           # DFlash drafter (block 16)
-DSPARK_DRAFT_NAME = "deepseek-ai/dspark_qwen3_4b_block7"  # DSpark drafter + markov (block 7)
+TARGET = "Qwen/Qwen3-4B"
 
-# Stage A (official DDTree/benchmark.py) gives baseline + dflash + ddtree and
-# cross-validates configs 0/4. Set False to run only the six experiment configs.
-RUN_OFFICIAL_REFERENCE = True
-
-# Single tree budget for the six experiment configs (Stage B). Kept in the Stage A
-# sweep below too, so config 4 lines up with ddtree_tb{SPARKED_TREE_BUDGET}.
-SPARKED_TREE_BUDGET = 64
-
-# A small, representative slice of the paper's suite: one math, one code, one
-# chat dataset. (dataset_name, max_samples)
-TASKS = [
-    ("gsm8k", 8),
-    ("humaneval", 8),
-    ("mt-bench", 8),
+# Draft backbones. `kind` is intrinsic to the checkpoint ("dflash" | "dspark").
+# `block_size` is an optional runtime override (default = checkpoint config); e.g.
+# add {"name": "dflash_b7", "model_id": "z-lab/Qwen3-4B-DFlash-b16",
+#      "kind": "dflash", "block_size": 7} to depth-match DFlash to the b7 head.
+BACKBONES = [
+    {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
+    {"name": "dspark_b7", "model_id": "deepseek-ai/dspark_qwen3_4b_block7", "kind": "dspark"},
 ]
 
-# Subset of the paper's tree-budget sweep (paper: 16,32,64,128,256,512,1024).
-# Two budgets are enough to show DDTree's acceptance-length scaling vs DFlash.
-TREE_BUDGET = "64,256"
+# The 2x2. Each entry is backbone x corrector x verify. corrector=None means no
+# correction; a corrector name is "<dspark-backbone>_markov" (auto-derived).
+METHODS = [
+    {"name": "dflash.tree", "backbone": "dflash_b16", "corrector": None, "verify": "tree"},
+    {"name": "dflash.markov.tree", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
+    {"name": "dspark.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
+]
+# Native chain references, on by default:
+#   dflash.chain = DFlash-b16 block drafting, no tree, no markov (old config 0)
+#   dspark.chain = DSpark-b7 drafting with its own markov head, native serial (old config 2)
+CHAIN_ANCHORS = True
 
-TEMPERATURE = 0.0          # greedy / deterministic
-MAX_NEW_TOKENS = 512       # paper uses 2048; smaller here to keep the sample cheap
+# Markov head used for the tree-free corrector-fit probe (measured on no-corrector runs).
+PROBE_CORRECTOR = "dspark_b7_markov"
+
+# Small representative slice: one math, one code, one chat. (dataset, max_samples)
+TASKS = [
+    ["gsm8k", 8],
+    ["humaneval", 8],
+    ["mt-bench", 8],
+]
+
+TREE_BUDGET = 64
+TEMPERATURE = 0.0          # greedy / deterministic (tree build is greedy top-k regardless)
+MAX_NEW_TOKENS = 512
+SEED = 0
+CONFIDENCE_THRESHOLD = 0.0  # dspark chain only
+MEASURE_PER_DEPTH = True
+MEASURE_CORRECTOR_FIT = True
+DEPTH_REPORT_LIMIT = 7      # per-depth / probe reporting horizon (depth-match to b7)
 
 # Acceptance length at temperature 0 is deterministic and GPU-independent, so an
-# A100-40GB reproduces the paper's acceptance numbers exactly. Timing/speedup
-# numbers would require matching the paper's H100 hardware (set GPU = "H100").
+# A100-40GB reproduces the numbers exactly. Timing/speedup would need matching H100.
 GPU = "A100-40GB"
-TIMEOUT_SECONDS = 60 * 60  # 1 hour is plenty for this subset
+TIMEOUT_SECONDS = 60 * 60
 
-# Pinned versions for reproducibility. torch 2.5.1 (cu124) + a matching prebuilt
-# flash-attn wheel avoids a ~30 min from-source flash-attn build.
+# Pinned versions. torch 2.5.1 (cu124) + a matching prebuilt flash-attn wheel.
 TORCH_VERSION = "2.5.1"
 FLASH_ATTN_WHEEL = (
     "https://github.com/Dao-AILab/flash-attention/releases/download/"
@@ -87,6 +95,31 @@ FLASH_ATTN_WHEEL = (
 HERE = Path(__file__).parent
 DDTREE_DIR = HERE / "DDTree"
 
+
+def build_run_config() -> dict:
+    methods = list(METHODS)
+    if CHAIN_ANCHORS:
+        methods = methods + [
+            {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
+            {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
+        ]
+    return {
+        "target": TARGET,
+        "backbones": BACKBONES,
+        "methods": methods,
+        "probe_corrector": PROBE_CORRECTOR,
+        "tasks": TASKS,
+        "tree_budget": TREE_BUDGET,
+        "temperature": TEMPERATURE,
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "seed": SEED,
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "measure_per_depth": MEASURE_PER_DEPTH,
+        "measure_corrector_fit": MEASURE_CORRECTOR_FIT,
+        "depth_report_limit": DEPTH_REPORT_LIMIT,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Image                                                                        #
 # --------------------------------------------------------------------------- #
@@ -95,51 +128,34 @@ image = (
     modal.Image.from_registry(
         "nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.11"
     )
-    # git is needed by some HF dataset loaders; build tools support DDTree's
-    # optional inline C++ KV-cache compaction (falls back to Python if absent).
     .apt_install("git", "build-essential")
-    .pip_install(
-        f"torch=={TORCH_VERSION}",
-        index_url="https://download.pytorch.org/whl/cu124",
-    )
+    .pip_install(f"torch=={TORCH_VERSION}", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install(FLASH_ATTN_WHEEL)
     .pip_install(
         # >=4.56: harness uses the newer `dtype=` from_pretrained kwarg (was torch_dtype)
         "transformers==4.57.1",
         "datasets==3.6.0",
-        "numpy",
-        "loguru",
-        "tqdm",
-        "ninja",
-        "typing_extensions",
-        "hf_transfer",
+        "numpy", "loguru", "tqdm", "ninja", "typing_extensions", "hf_transfer",
     )
     .env(
         {
             "HF_HOME": "/cache/hf",
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
-            # single-process run: benchmark.py's dist layer no-ops without RANK
             "TOKENIZERS_PARALLELISM": "false",
         }
     )
-    # Ship the official harness verbatim.
     .add_local_dir(DDTREE_DIR.as_posix(), remote_path="/root/DDTree")
 )
 
-app = modal.App("ddtree-dflash-repro")
+app = modal.App("ddtree-markov-transfer")
 
-# Persist HF downloads (models + datasets) and benchmark outputs across runs.
 hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
 results_vol = modal.Volume.from_name("ddtree-results", create_if_missing=True)
-
-# Attach an HF token in case any dataset/model ends up gated. The models and
-# datasets used here are public, so this is belt-and-suspenders. Uses the
-# existing "huggingface" secret in this workspace.
 secrets = [modal.Secret.from_name("huggingface")]
 
 
 # --------------------------------------------------------------------------- #
-# Remote benchmark function                                                    #
+# Remote function (single stage, in-process)                                   #
 # --------------------------------------------------------------------------- #
 
 @app.function(
@@ -149,140 +165,40 @@ secrets = [modal.Secret.from_name("huggingface")]
     volumes={"/cache": hf_cache, "/results": results_vol},
     secrets=secrets,
 )
-def run_benchmark() -> dict:
-    import subprocess
+def run_experiment(cfg: dict) -> dict:
     import sys
 
-    import numpy as np
-    import torch
+    sys.path.insert(0, "/root/DDTree")
+    import run_experiment as exp  # the driver in DDTree/
 
-    runs_dir = Path("/results/runs")
-    runs_dir.mkdir(parents=True, exist_ok=True)
+    summary = exp.run(cfg)
 
-    def slug(v: str) -> str:
-        return v.replace("/", "_").replace(":", "_").replace(" ", "_")
-
-    summary = {
-        "config": {
-            "model": MODEL_NAME,
-            "dflash_draft": DRAFT_NAME,
-            "dspark_draft": DSPARK_DRAFT_NAME,
-            "tasks": TASKS,
-            "tree_budget": TREE_BUDGET,
-            "sparked_tree_budget": SPARKED_TREE_BUDGET,
-            "temperature": TEMPERATURE,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "gpu": GPU,
-            "metric": "mean_acceptance_length",
-        },
-        "results": {},    # the six experiment configs (Stage B)
-        "reference": {},  # official baseline/dflash/ddtree (Stage A)
-    }
-
-    # ------------------------------------------------------------------ #
-    # STAGE A - official reference (unmodified benchmark.py).            #
-    # ------------------------------------------------------------------ #
-    if RUN_OFFICIAL_REFERENCE:
-        save_paths = {}
-        for dataset_name, max_samples in TASKS:
-            run_name = (
-                f"{dataset_name}__{slug(MODEL_NAME)}__{slug(DRAFT_NAME)}"
-                f"__temp{slug(str(TEMPERATURE))}__sdpa.pt"
-            )
-            save_path = runs_dir / run_name
-            save_paths[dataset_name] = save_path
-            if save_path.exists():
-                print(f"[skip] {save_path} already exists", flush=True)
-                continue
-            cmd = [
-                sys.executable, "benchmark.py",
-                "--dataset", dataset_name,
-                "--max-samples", str(max_samples),
-                "--model-name-or-path", MODEL_NAME,
-                "--draft-name-or-path", DRAFT_NAME,
-                "--tree-budget", TREE_BUDGET,
-                "--temperature", str(TEMPERATURE),
-                "--max-new-tokens", str(MAX_NEW_TOKENS),
-                "--save-path", save_path.as_posix(),
-                # NOTE: no --flash-attn -> target uses sdpa -> DFlash + DDTree both run.
-            ]
-            print(f"\n{'='*70}\n[stage A] {dataset_name} (max_samples={max_samples})\n{'='*70}", flush=True)
-            print(" ".join(cmd), flush=True)
-            subprocess.run(cmd, cwd="/root/DDTree", check=True)
-            results_vol.commit()
-
-        def mean_accept(run_data, key):
-            vals = [
-                float(np.mean(r[key].acceptance_lengths))
-                for r in run_data["responses"]
-                if key in r and r[key].acceptance_lengths
-            ]
-            return float(np.mean(vals)) if vals else None
-
-        ref_keys = ["baseline", "dflash"] + [f"ddtree_tb{b}" for b in TREE_BUDGET.split(",")]
-        for dataset_name, _ in TASKS:
-            run_data = torch.load(save_paths[dataset_name], weights_only=False, map_location="cpu")
-            summary["reference"][dataset_name] = {k: mean_accept(run_data, k) for k in ref_keys}
-
-    # ------------------------------------------------------------------ #
-    # STAGE B - the six experiment configs (run_acceptance.py).          #
-    # ------------------------------------------------------------------ #
-    sparked_json = runs_dir / (
-        f"sparked__{slug(MODEL_NAME)}__{slug(DRAFT_NAME)}__{slug(DSPARK_DRAFT_NAME)}"
-        f"__tb{SPARKED_TREE_BUDGET}__temp{slug(str(TEMPERATURE))}.json"
-    )
-    tasks_arg = ",".join(f"{name}:{n}" for name, n in TASKS)
-    if sparked_json.exists():
-        print(f"[skip] {sparked_json} already exists", flush=True)
-    else:
-        cmd = [
-            sys.executable, "run_acceptance.py",
-            "--target", MODEL_NAME,
-            "--dflash-draft", DRAFT_NAME,
-            "--dspark-draft", DSPARK_DRAFT_NAME,
-            "--tasks", tasks_arg,
-            "--tree-budget", str(SPARKED_TREE_BUDGET),
-            "--temperature", str(TEMPERATURE),
-            "--max-new-tokens", str(MAX_NEW_TOKENS),
-            "--save-json", sparked_json.as_posix(),
-        ]
-        print(f"\n{'='*70}\n[stage B] six configs: {tasks_arg}\n{'='*70}", flush=True)
-        print(" ".join(cmd), flush=True)
-        subprocess.run(cmd, cwd="/root/DDTree", check=True)
-        results_vol.commit()
-
-    sparked = json.loads(sparked_json.read_text())
-    method_ids = list(sparked["config"]["methods"].keys())
-    method_labels = sparked["config"]["methods"]
-    for dataset_name, _ in TASKS:
-        summary["results"][dataset_name] = {
-            mid: sparked["results"][dataset_name][mid]["mean_accept"] for mid in method_ids
-        }
-
-    (Path("/results") / "summary.json").write_text(json.dumps(summary, indent=2))
+    out = Path("/results/summary.json")
+    out.write_text(json.dumps(summary, indent=2))
     results_vol.commit()
-
-    # Pretty-print the six-config table to the container log.
-    print("\n\n" + "=" * 78)
-    print("Mean acceptance length (tokens/round), temperature 0, greedy")
-    print("=" * 78)
-    header = ["dataset"] + [f"{mid}:{method_labels[mid]}" for mid in method_ids]
-    print("  ".join(f"{h:>22}" for h in header))
-    for dataset_name, _ in TASKS:
-        row = [dataset_name] + [f"{summary['results'][dataset_name][mid]:.3f}" for mid in method_ids]
-        print("  ".join(f"{c:>22}" for c in row))
-
     return summary
 
 
 @app.local_entrypoint()
 def main():
-    summary = run_benchmark.remote()
+    summary = run_experiment.remote(build_run_config())
 
     out_dir = HERE / "Results"
     out_dir.mkdir(exist_ok=True)
-    out_file = out_dir / "summary.json"
-    out_file.write_text(json.dumps(summary, indent=2))
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    print(f"\nSaved summary to {out_file}")
-    print(json.dumps(summary["results"], indent=2))
+    print(f"\nSaved summary to {out_dir / 'summary.json'}")
+    if summary.get("transfer"):
+        print("\nTransfer (acceptance % change from adding the corrector):")
+        for bb, t in summary["transfer"].items():
+            pct = t.get("accept_pct_change")
+            if pct is None:
+                print(f"  {bb}: n/a")
+            else:
+                print(f"  {bb}: {t['accept_off']:.3f} -> {t['accept_on']:.3f} ({pct:+.1f}%)")
+    if summary.get("corrector_fit"):
+        lim = summary["config"]["depth_report_limit"]
+        print(f"\nCorrector fit (depth<={lim}):")
+        for name, cf in summary["corrector_fit"].items():
+            o = cf[f"overall_depth_le_{lim}"]
+            print(f"  {cf['backbone']}: delta_hit={o['delta_hit']:+.4f} delta_ce={o['delta_ce']:+.4f}")

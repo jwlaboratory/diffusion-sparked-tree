@@ -184,6 +184,7 @@ def sparked_tree_generate(
     tree_budget: int | None = None,
     markov_head=None,
     draft_mode: str = "dspark",
+    probe_markov_head=None,
     save_tree_traces: bool = False,
 ) -> SimpleNamespace:
     """Tree decoding with a pluggable drafter and corrector.
@@ -194,8 +195,15 @@ def sparked_tree_generate(
       "dflash" - model is a DFlashDraftModel; in-place indexing, block_size - 1
                  drafts, embeddings/lm_head borrowed from the target.
     markov_head: the DSpark markov head to use as the per-step corrector, or None
-      for a per-depth-independent tree (config 4/5). It is token-only, so it can be
-      spliced onto either backbone.
+      for a per-depth-independent tree. It is token-only, so it can be spliced onto
+      either backbone.
+    probe_markov_head: measurement-only. When set (typically on a *no-corrector*
+      run), we record, at each committed position along the accepted path, whether
+      argmax(base_logits) and argmax(base_logits + bias(prev)) match the target's
+      token, plus their cross-entropies. This is the confound-free "does this head
+      fit this backbone?" probe: real positions, real previous tokens, no tree/depth
+      extrapolation. It never affects the tree that is actually built. Returned as
+      `probe_by_depth`. Ignored if markov_head is also set (the corrector is live).
     """
     if draft_mode not in ("dspark", "dflash"):
         raise ValueError(f"draft_mode must be 'dspark' or 'dflash', got {draft_mode!r}")
@@ -255,6 +263,14 @@ def sparked_tree_generate(
     draft_prefill = True
     previous_tree_start = 0
     previous_tree_length = 0
+
+    # Corrector-fit probe (measurement-only; never touches the live tree). Active
+    # when a probe head is supplied and the run itself is not already corrected.
+    probe_active = probe_markov_head is not None and markov_head is None
+    probe_by_depth: dict[int, dict[str, float]] = {}
+    if probe_active:
+        probe_w1 = probe_markov_head.markov_w1.weight.detach().float()  # [vocab, rank]
+        probe_w2 = probe_markov_head.markov_w2.weight.detach().float()  # [vocab, rank]
 
     while start < max_length:
         # Draft stage: one parallel DSpark backbone pass over [anchor, MASK, ...].
@@ -346,6 +362,34 @@ def sparked_tree_generate(
         output_ids[:, start : start + len(accepted_indices)] = accepted_tokens
         output_ids[:, start + len(accepted_indices)] = next_token
 
+        # Corrector-fit probe: along the committed path, compare base vs
+        # base+bias(prev) against the target's actual token. Depth d uses base row
+        # d-1; prev token is the committed token at depth d-1 (anchor at d=1). Depth
+        # L is the rejection/bonus point (target token = next_token).
+        if probe_active:
+            accepted_len = len(accepted_indices)
+            n_rows = base_draft_logits.shape[1]
+            for depth in range(1, accepted_len + 1):
+                row_idx = depth - 1
+                if row_idx >= n_rows:
+                    break
+                prev_tok = int(accepted_tokens[0, depth - 1])
+                true_tok = int(accepted_tokens[0, depth]) if depth < accepted_len else int(next_token)
+                base_row = base_draft_logits[0, row_idx].float()
+                corr_row = base_row + (probe_w2 @ probe_w1[prev_tok])
+                base_hit = int(int(base_row.argmax()) == true_tok)
+                corr_hit = int(int(corr_row.argmax()) == true_tok)
+                ce_base = float(-torch.log_softmax(base_row, dim=-1)[true_tok])
+                ce_corr = float(-torch.log_softmax(corr_row, dim=-1)[true_tok])
+                bucket = probe_by_depth.setdefault(
+                    depth, {"n": 0, "base_hit": 0, "corr_hit": 0, "ce_base": 0.0, "ce_corr": 0.0}
+                )
+                bucket["n"] += 1
+                bucket["base_hit"] += base_hit
+                bucket["corr_hit"] += corr_hit
+                bucket["ce_base"] += ce_base
+                bucket["ce_corr"] += ce_corr
+
         compact_dynamic_cache(past_key_values_target, start, accepted_indices)
         target_hidden = extract_context_feature(output.hidden_states, model.target_layer_ids).index_select(1, accepted_index_tensor)
 
@@ -390,4 +434,5 @@ def sparked_tree_generate(
         stage_times=stage_times,
         round_timestamps=round_timestamps,
         round_trees=round_trees,
+        probe_by_depth=probe_by_depth,
     )
