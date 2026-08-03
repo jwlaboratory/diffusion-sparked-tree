@@ -1,0 +1,45 @@
+{
+  "config": {
+    "model": "Qwen/Qwen3-4B",
+    "draft": "z-lab/Qwen3-4B-DFlash-b16",
+    "tasks": [
+      [
+        "gsm8k",
+        8
+      ],
+      [
+        "humaneval",
+        8
+      ],
+      [
+        "mt-bench",
+        8
+      ]
+    ],
+    "tree_budget": "64,256",
+    "temperature": 0.0,
+    "max_new_tokens": 512,
+    "gpu": "A100-40GB",
+    "metric": "mean_acceptance_length"
+  },
+  "results": {
+    "gsm8k": {
+      "baseline": 1.0,
+      "dflash": 6.854664869166635,
+      "ddtree_tb64": 8.905846413526458,
+      "ddtree_tb256": 9.673851583435951
+    },
+    "humaneval": {
+      "baseline": 1.0,
+      "dflash": 6.8024521081661184,
+      "ddtree_tb64": 8.921285130610986,
+      "ddtree_tb256": 9.676438581922646
+    },
+    "mt-bench": {
+      "baseline": 1.0,
+      "dflash": 5.343820953218646,
+      "ddtree_tb64": 6.898330965368199,
+      "ddtree_tb256": 7.469417943514931
+    }
+  }
+}
