@@ -7,11 +7,9 @@ convert — DSpark's confidence head, but tree-aware. It was measured on real
 rounds and it fails on two independent axes. This document records why, because
 the reason turned out to be more general than the idea.
 
-> **Status:** 2 of 3 datasets (gsm8k, humaneval — 653 rounds). mt-bench was still
-> running when this was archived. Both completed datasets agree, and the failure
-> is structural rather than marginal, so mt-bench is unlikely to reverse it — but
-> it is unmeasured, and chat is the workload where `investigate/FINDINGS.md`
-> finding 5 says the economics differ most.
+> **Status: complete.** All 3 datasets, 1082 rounds (gsm8k 232, humaneval 421,
+> mt-bench 429). An earlier draft of this document reported the 2-dataset
+> partial; mt-bench did not reverse it.
 
 ---
 
@@ -51,27 +49,43 @@ degrades as bf16 divergence accumulates and is what killed its finding 1.
 
 ## The result
 
-653 rounds, block-16 drafter, budget 64. Task: predict this round's **tree**
+1082 rounds, block-16 drafter, budget 64. Task: predict this round's **tree**
 acceptance from the free confidence features.
 
 | predictor | MAE (tokens) |
 |---|---|
-| raw `pred_chain_len` | 6.46 |
-| **affine-recalibrated free estimator** | **3.25** ← the honest bar |
-| trained tree-aware head | 2.94 *(random split — leaks)* |
+| raw `pred_chain_len` | 5.25 |
+| **affine-recalibrated free estimator** | **3.18** ← the honest bar |
+| trained tree-aware head | 2.99 *(random split — leaks)* |
 
 Leave-one-dataset-out, which is the read that matters:
 
-| held out | affine base | head | better by |
-|---|---|---|---|
-| gsm8k | 3.658 | 3.433 | +0.225 |
-| humaneval | 3.393 | 3.449 | **−0.056** |
-| | | **mean** | **+0.084** |
+| held out | n | affine base | head | better by |
+|---|---|---|---|---|
+| gsm8k | 232 | 4.046 | 3.969 | +0.077 |
+| humaneval | 421 | 3.172 | 3.269 | **−0.097** |
+| mt-bench | 429 | 3.917 | 2.927 | **+0.990** |
+| | | | **mean** | **+0.323** |
 
-**Two failures, either one sufficient.** The head beats a recalibrated free
-estimator by 0.08 tokens — noise — and is *worse* on one of the two held-out
-workloads. And both estimators sit at 3.4–3.7 tokens against the ≤2.0 spec, well
-into the range where the noise study said a gate buys almost nothing.
+The mean looks positive, and it is not. Three checks, and it fails all three:
+
+1. **Nothing meets the spec.** Held-out MAE is 2.93–3.97 tokens against ≤2.0 —
+   the range the noise study calls "buys almost nothing". This alone is fatal.
+2. **The mean is one cell.** mt-bench carries the entire +0.323; gsm8k is noise
+   (+0.077) and humaneval is *negative* (−0.097).
+3. **It loses on the leaky split.** On random 80/20, where rounds from the same
+   prompt appear in both train and val and the head should look its best, it is
+   **worse** than the calibrated baseline (−0.041).
+
+(3) is what explains (2). If the head had learned something real, the leaky split
+would show it most clearly. That it does not means the mt-bench cell is the
+*affine baseline transferring badly* to a workload unlike the two it was fit on,
+which the MLP's nonlinearity partially absorbs. That is not tree-awareness.
+
+> A first version of the verdict logic in `train_head.py` checked only the mean
+> gain and a loose MAE floor, and **green-lit this head**. It now requires all
+> three checks. Worth recording: an aggregate that looks like a pass can be one
+> workload wide.
 
 ### A baseline error worth recording
 
@@ -87,11 +101,21 @@ to clear. It does not clear it.
 
 ### Independent structural confirmation
 
-`price_gate.py` reaches the same conclusion by another route. Gating is only safe
-on rounds already at the block ceiling — those needed no width. But the
-"% gated at ceiling" column never gets high: best is **38%** at T=5.0 on gsm8k,
-~20% elsewhere. At any threshold that saves meaningful width, most gated rounds
-were **still using depth** and would lose tokens.
+`price_gate.py` reaches the same conclusion by another route, and this one does
+not depend on any model. Gating is only safe on rounds already at the block
+ceiling — those needed no width. But the "% gated at ceiling" column never gets
+high:
+
+| dataset | estimator sd | best % gated at ceiling | at what saving |
+|---|---|---|---|
+| gsm8k | 4.01 | 38% (T=5.0) | −10.8% width |
+| humaneval | 3.75 | ~20% | −18% width |
+| mt-bench | 2.97 | **2.4%** (T=1.0) | −50.6% width |
+
+mt-bench is the clearest failure: at a threshold that would save half the width,
+gated rounds were accepting **5.92 of a possible 17** — deep in the region where
+the tree is still doing work. At any threshold that saves meaningful width, most
+gated rounds were **still using depth** and would lose tokens.
 
 ## Why it fails — and this is the transferable part
 

@@ -180,17 +180,39 @@ def main():
                 "val_mae": v, "baseline_mae": b, "fields": list(FIELDS)}, out)
     print(f"\nsaved {out}")
 
+    # Three independent checks. An earlier version tested only the mean gain and a
+    # loose MAE floor, and green-lit a head whose entire mean came from one of
+    # three workloads while losing on the leaky split -- so all three are required.
+    SPEC = 2.0
+    head_maes = [x for _, x in transfer]
+    meets_spec = max(head_maes) <= SPEC
+    wins = sum(1 for bb, vv in transfer if bb - vv > 0.05)
+    consistent = wins > len(transfer) / 2
+    # If the head cannot beat the baseline where rounds LEAK between train and val,
+    # a positive leave-one-out mean is far more likely to be the affine baseline
+    # transferring badly to one workload than the head learning anything real.
+    sane = (b - v) > 0.0
+
     print("\nVERDICT")
-    if mean_gain <= 0.05:
-        print("  The head does NOT beat the free estimator on held-out workloads.")
-        print("  Ship the free pred_chain_len gate; this head is not worth its")
-        print("  complexity or its per-round forward.")
-    elif min(v for _, v in transfer) > 3.0:
-        print("  Both estimators miss the +-2 token spec on held-out workloads.")
-        print("  The gate is not viable on this signal -- do not run stage 2.")
+    print(f"  meets +-{SPEC} token spec on every held-out workload : "
+          f"{'yes' if meets_spec else 'NO'}  (worst {max(head_maes):.2f})")
+    print(f"  beats the calibrated baseline on most workloads     : "
+          f"{'yes' if consistent else 'NO'}  ({wins}/{len(transfer)})")
+    print(f"  also beats it on the leaky random split             : "
+          f"{'yes' if sane else 'NO'}  ({b - v:+.3f})")
+
+    if meets_spec and consistent and sane:
+        print(f"\n  USE IT. Beats the calibrated free estimator by {mean_gain:.2f} "
+              "tokens\n  on held-out workloads and clears the spec. Gate with this head.")
+    elif consistent and sane:
+        print(f"\n  NOT VIABLE. The head is the better predictor, but both it and the\n"
+              f"  baseline miss the +-{SPEC} spec (worst {max(head_maes):.2f} tokens), "
+              "which is the\n  range where the noise study says a gate buys almost nothing.")
     else:
-        print(f"  The head beats the free estimator by {mean_gain:.2f} tokens on")
-        print("  held-out workloads. Use it for the stage-2 gate.")
+        print("\n  NOT VIABLE. The head does not reliably beat a calibrated free\n"
+              "  estimator, and neither meets the spec. A positive mean driven by a\n"
+              "  minority of workloads is the baseline transferring badly, not signal.\n"
+              "  Do not run stage 2.")
 
 
 if __name__ == "__main__":
