@@ -47,16 +47,28 @@ TARGET = "Qwen/Qwen3-4B"
 BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
     {"name": "dspark_b7", "model_id": "deepseek-ai/dspark_qwen3_4b_block7", "kind": "dspark"},
+    # Our fine-tuned block-16 DSpark from experiment 2 (warm-started from the b7
+    # checkpoint; carries its own jointly-trained markov head).
+    {"name": "dspark_b16", "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16", "kind": "dspark"},
 ]
 
-# All methods run by default. corrector=None = no correction; "<dspark>_markov" is auto-derived.
+# All methods run by default. corrector=None = no correction; "<dspark>_markov" is
+# auto-derived. On a dflash CHAIN the corrector is swept serially over the block
+# (chain analogue of markov.tree). markov="off" ablates a dspark chain's intrinsic
+# head (parallel argmax), giving the true no-markov chain baseline.
 METHODS = [
     {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
+    {"name": "dflash.markov.chain", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "chain"},
     {"name": "dflash.tree", "backbone": "dflash_b16", "corrector": None, "verify": "tree"},
     {"name": "dflash.markov.tree", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark.nomarkov.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain", "markov": "off"},
     {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
     {"name": "dspark.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
     {"name": "dspark.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark_b16.nomarkov.chain", "backbone": "dspark_b16", "corrector": None, "verify": "chain", "markov": "off"},
+    {"name": "dspark_b16.chain", "backbone": "dspark_b16", "corrector": None, "verify": "chain"},
+    {"name": "dspark_b16.tree", "backbone": "dspark_b16", "corrector": None, "verify": "tree"},
+    {"name": "dspark_b16.markov.tree", "backbone": "dspark_b16", "corrector": "dspark_b16_markov", "verify": "tree"},
 ]
 
 PROBE_CORRECTOR = "dspark_b7_markov"   # head used for the tree-free fit probe
@@ -74,11 +86,11 @@ SEED = 0
 CONFIDENCE_THRESHOLD = 0.0
 MEASURE_PER_DEPTH = True
 MEASURE_CORRECTOR_FIT = True
-DEPTH_REPORT_LIMIT = 7
+DEPTH_REPORT_LIMIT = 16   # must reach the b16 horizon or its whole advantage is invisible
 FORCE = False   # True -> ignore the volume cache and recompute every dataset
 
 GPU = "A100-40GB"
-TIMEOUT_SECONDS = 2 * 60 * 60   # per dataset-container (only one dataset each now)
+TIMEOUT_SECONDS = 4 * 60 * 60   # per dataset-container (12 methods each now)
 
 TORCH_VERSION = "2.5.1"
 FLASH_ATTN_WHEEL = (
@@ -235,8 +247,19 @@ def verify_equiv(n: int = 4, tree_budget: int = 64, max_new_tokens: int = 256) -
 
 
 @app.local_entrypoint()
-def main(force: bool = FORCE):
+def main(force: bool = FORCE, methods: str = ""):
+    """`--methods a,b,c` runs ONLY those methods (their own volume-cache
+    fingerprint) and merges the fresh raws into the existing local
+    Results/results_detailed.json before rebuilding the summary, so a new method
+    never forces a recompute of the ones already measured."""
     cfg = build_run_config(force=force)
+    only = [s.strip() for s in methods.split(",") if s.strip()]
+    if only:
+        known = {m["name"] for m in METHODS}
+        unknown = set(only) - known
+        if unknown:
+            raise SystemExit(f"unknown methods: {sorted(unknown)}")
+        cfg["methods"] = [m for m in METHODS if m["name"] in only]
     sys.path.insert(0, DDTREE_DIR.as_posix())
     import aggregate
     fp = aggregate.fingerprint(cfg)
@@ -258,6 +281,24 @@ def main(force: bool = FORCE):
 
     per_dataset_raw = {o["dataset"]: o["raw"] for o in outs}
     backbones_meta = next(o["backbones_meta"] for o in outs)
+
+    if only:
+        prev = json.loads((out_dir / "results_detailed.json").read_text())
+        for k in ("target", "tree_budget", "temperature", "max_new_tokens", "seed", "tasks"):
+            if prev["cfg"][k] != cfg[k]:
+                raise SystemExit(f"cannot merge: existing results_detailed.json has {k}={prev['cfg'][k]!r}, "
+                                 f"this run has {cfg[k]!r}")
+        for d, raw in per_dataset_raw.items():
+            prev["per_dataset"][d]["methods"].update(raw["methods"])
+        # keep method order canonical (METHODS order) for stable charts/tables
+        for d in prev["per_dataset"]:
+            ms = prev["per_dataset"][d]["methods"]
+            prev["per_dataset"][d]["methods"] = {m["name"]: ms[m["name"]] for m in METHODS if m["name"] in ms}
+        cfg = {**cfg, "methods": [m for m in METHODS
+                                  if m["name"] in prev["per_dataset"][TASKS[0][0]]["methods"]]}
+        per_dataset_raw = prev["per_dataset"]
+        backbones_meta = prev["backbones_meta"]
+
     summary = aggregate.build_summary(cfg, backbones_meta, per_dataset_raw)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     # Full detail (per-round distributions, per-sample timing, stage breakdown,

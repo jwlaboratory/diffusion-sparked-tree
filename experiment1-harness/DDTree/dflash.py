@@ -20,6 +20,7 @@ def dflash_generate(
     block_size: int,
     stop_token_ids: list[int],
     temperature: float = 0.0,
+    markov_head=None,
 ) -> SimpleNamespace:
     num_input_tokens = input_ids.shape[1]
     max_length = num_input_tokens + max_new_tokens
@@ -76,7 +77,16 @@ def dflash_generate(
                 is_causal=False,
             )[:, -block_size + 1 :, :])
             past_key_values_draft.crop(start)
-            block_output_ids[:, 1:] = sample(draft_logits)
+            if markov_head is None:
+                block_output_ids[:, 1:] = sample(draft_logits)
+            else:
+                # Serial sweep of a (possibly foreign) markov head over the chain
+                # block: draft k+1 sees draft k, seeded by the committed anchor.
+                block_output_ids[:, 1:], _ = markov_head.sample_block_tokens(
+                    draft_logits,
+                    first_prev_token_ids=block_output_ids[:, 0],
+                    temperature=0.0,
+                )
             draft_stage_elapsed = cuda_time() - draft_stage_start
             if draft_prefill:
                 draft_prefill = False

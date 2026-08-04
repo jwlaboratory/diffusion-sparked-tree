@@ -49,6 +49,7 @@ def dspark_generate(
     stop_token_ids: list[int],
     temperature: float = 0.0,
     confidence_threshold: float = 0.0,
+    use_markov: bool = True,
 ) -> SimpleNamespace:
     mask_token_id = model.mask_token_id
     num_input_tokens = input_ids.shape[1]
@@ -117,12 +118,17 @@ def dspark_generate(
         backbone_stage_elapsed = cuda_time() - backbone_stage_start
 
         # Draft stage 2: serial markov sweep. block_size tiny steps, no backbone work.
+        # use_markov=False ablates the head: one parallel argmax over the backbone
+        # logits, DFlash-style, so positions are drafted independently.
         markov_stage_start = cuda_time()
-        draft_token_ids, _ = model.sample_draft_tokens(
-            base_draft_logits,
-            first_prev_token_ids=draft_input_ids[:, 0],
-            temperature=0.0,
-        )
+        if use_markov:
+            draft_token_ids, _ = model.sample_draft_tokens(
+                base_draft_logits,
+                first_prev_token_ids=draft_input_ids[:, 0],
+                temperature=0.0,
+            )
+        else:
+            draft_token_ids = sample(base_draft_logits, 0.0)
         markov_stage_elapsed = cuda_time() - markov_stage_start
 
         # Draft stage 3: keep only the prefix the drafter is confident about.

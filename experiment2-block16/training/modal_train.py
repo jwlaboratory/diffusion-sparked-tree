@@ -59,6 +59,12 @@ hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
 # workspace without H100 access - even for CPU-only functions like publish().
 BIG_GPU = os.environ.get("DDTREE_BIG_GPU", "H100")
 
+# GPU for the data-scaling arms. Faster hardware only — the training config
+# (anchors, seq len, batch, steps) is NOT scaled up with the bigger card, so
+# arms stay comparable. Single GPU only: multi-GPU would change the DP world
+# size and thus the effective batch semantics.
+DATA_GPU = os.environ.get("DDTREE_DATA_GPU", "A10G")
+
 NUM_SAMPLES = 2400          # PerfectBlend rows before the 5% eval split
 CACHE_DIR = "/vol/target_cache_block16"
 CKPT_FINAL = "/vol/ckpt_final/dspark_block16"
@@ -115,6 +121,31 @@ def _sh(cmd, cwd="/root/DeepSpec", env=None):
         full_env.update(env)
     print(f"$ {' '.join(cmd)}", flush=True)
     subprocess.run(cmd, cwd=cwd, env=full_env, check=True)
+
+
+def _patch_data_script_skip_invalid():
+    """Make download_and_split.py skip rows that fail validation instead of
+    aborting the whole download. PerfectBlend has occasional malformed rows
+    (e.g. empty message content) that only surface at larger sample sizes —
+    the 24k pull died on one such row. Dropping a handful of rows changes the
+    effective train count negligibly; the skip count is printed."""
+    path = "/root/DeepSpec/scripts/data/download_and_split.py"
+    src = open(path).read()
+    target = (
+        "            converted = normalize_conversations(row)\n"
+        "            validate_conversations(converted, row_number)\n"
+    )
+    replacement = (
+        "            converted = normalize_conversations(row)\n"
+        "            try:\n"
+        "                validate_conversations(converted, row_number)\n"
+        "            except ValueError as e:\n"
+        "                print(f'[skip-invalid] {e}', flush=True)\n"
+        "                continue\n"
+    )
+    assert src.count(target) == 2, f"expected 2 validate blocks, found {src.count(target)}"
+    open(path, "w").write(src.replace(target, replacement))
+    print("[patch] download_and_split.py now skips invalid rows", flush=True)
 
 
 def _stage_files(gamma: float = 4.0, exp_suffix: str = "", overrides: dict | None = None):
@@ -192,6 +223,123 @@ def pipeline(gamma: float = 4.0, exp_suffix: str = ""):
 
     # ---- stage 4: publish latest checkpoint for from_pretrained ----
     import glob
+    import shutil
+
+    latest = _latest_checkpoint(exp_suffix)
+    dest = f"{CKPT_FINAL}{exp_suffix}"
+    print(f"publishing {latest} -> {dest}", flush=True)
+    if os.path.exists(dest):
+        shutil.rmtree(dest)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copytree(latest, dest)
+    vol.commit()
+    print("PIPELINE COMPLETE", flush=True)
+    return latest
+
+
+@app.function(
+    image=image,
+    gpu=DATA_GPU,
+    timeout=86400,
+    volumes={"/vol": vol, "/hfcache": hf_cache},
+)
+def pipeline_data(
+    exp_suffix: str,
+    num_samples: int,
+    max_train_steps: int,
+    cache_tag: str = "",
+):
+    """Data-scaling arms: the _best recipe exactly (A10G, seq 768, 32 anchors,
+    gamma 4, global batch 32, lr 1e-4), varying ONLY the row count, with
+    max_train_steps epoch-matched across arms (~5 epochs at global batch 32:
+    2,400 rows -> 360 steps, 10,000 -> 1,500, 24,000 -> 3,600). This is the
+    clean version of the confounded _bigdata run: one variable, everything else
+    pinned. cache_tag="" reuses the untagged _best data + target cache.
+    """
+    import os
+    import threading
+
+    _patch_data_script_skip_invalid()
+    _stage_files(
+        gamma=4.0,
+        exp_suffix=exp_suffix,
+        overrides={
+            "max_train_steps": max_train_steps,
+            "target_cache_path": f'"{CACHE_DIR}{cache_tag}"',
+        },
+    )
+    print(open("/root/DeepSpec/config_block16.py").read(), flush=True)
+
+    os.makedirs("/vol/checkpoints", exist_ok=True)
+    os.makedirs("/vol/tensorboard", exist_ok=True)
+    for link, target in (("/root/checkpoints", "/vol/checkpoints"), ("/root/tensorboard", "/vol/tensorboard")):
+        if not os.path.exists(link):
+            os.symlink(target, link)
+
+    data_path = f"/vol/data/train{cache_tag}.jsonl"
+    cache_dir = f"{CACHE_DIR}{cache_tag}"
+
+    # "exists" is not enough: a crashed stage-1 leaves a PARTIAL jsonl on the
+    # volume, and a naive skip then silently trains on a fraction of the data
+    # (this happened: 5,085 of 22,800 rows). Require ~the expected row count.
+    expected_rows = int(num_samples * 0.95 * 0.9)  # 5% eval split, 10% slack for skipped rows
+
+    def _row_count(path):
+        with open(path) as fh:
+            return sum(1 for _ in fh)
+
+    if os.path.exists(data_path) and _row_count(data_path) < expected_rows:
+        n = _row_count(data_path)
+        print(f"stage 1: {data_path} has {n} rows < expected {expected_rows} - partial from a crashed run, redownloading", flush=True)
+        os.remove(data_path)
+        vol.commit()
+
+    if not os.path.exists(data_path):
+        _sh(["python", "scripts/data/download_and_split.py",
+             "--sample-size", str(num_samples),
+             "--train-output-path", data_path,
+             "--test-output-dir", "/vol/data",
+             "--test-output-name", f"perfectblend{cache_tag}.jsonl",
+             "--skip-existing"])
+        assert _row_count(data_path) >= expected_rows, \
+            f"stage 1 produced {_row_count(data_path)} rows, expected >= {expected_rows}"
+        vol.commit()
+    else:
+        print(f"stage 1: {data_path} exists with {_row_count(data_path)} rows, skipping", flush=True)
+
+    done_marker = f"{cache_dir}/.done"
+    if not os.path.exists(done_marker):
+        _sh(["python", "scripts/data/prepare_target_cache.py",
+             "--config", "config_block16.py",
+             "--train-data-path", data_path,
+             "--output-dir", cache_dir, "--local-batch-size", "8"])
+        open(done_marker, "w").write("ok")
+        vol.commit()
+    else:
+        print(f"stage 2: {cache_dir} exists, skipping", flush=True)
+
+    # Long train stage: commit the volume every 10 min so the step_* checkpoints
+    # (written every checkpointing_steps=200) survive a container death - an
+    # uncommitted volume loses everything since the last commit.
+    stop = threading.Event()
+
+    def _committer():
+        while not stop.wait(600):
+            try:
+                vol.commit()
+                print("[committer] volume committed", flush=True)
+            except Exception as e:  # commit conflicts are retryable next tick
+                print(f"[committer] commit failed: {e}", flush=True)
+
+    committer = threading.Thread(target=_committer, daemon=True)
+    committer.start()
+    try:
+        _sh(["python", "train_warmstart.py", "--config", "config_block16.py"])
+    finally:
+        stop.set()
+        committer.join(timeout=30)
+    vol.commit()
+
     import shutil
 
     latest = _latest_checkpoint(exp_suffix)

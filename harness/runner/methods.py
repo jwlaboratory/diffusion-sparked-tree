@@ -32,6 +32,8 @@ class Method:
     backbone: str                     # key into backbones
     corrector: Optional[str] = None   # corrector name, or None
     verify: str = "tree"              # "chain" | "tree" | "ddtree"
+    tree_kwargs: Optional[dict] = None  # extra kwargs for sparked_tree_generate
+                                        # (e.g. tree_mode/beam_schedule); verify="tree" only
 
 
 def needs_budget(method: Method) -> bool:
@@ -56,6 +58,9 @@ def build_method_callable(
         stop_token_ids=[eos_id],
         temperature=cfg["temperature"],
     )
+
+    if method.tree_kwargs and method.verify != "tree":
+        raise ValueError(f"{method.name}: tree_kwargs only applies to verify='tree'")
 
     corrector_head = None
     if method.corrector is not None:
@@ -91,11 +96,12 @@ def build_method_callable(
         # probe_markov_head is intentionally never passed: the corrector-fit probe
         # runs a per-token full-vocab loop inside the decode window and would make
         # exactly the cheap arms look slow in a timing experiment.
+        tree_kwargs = dict(method.tree_kwargs or {})
         return lambda ids: sparked_tree_generate(
             model=model, target=target, input_ids=ids, mask_token_id=model.mask_token_id,
             block_size=bs, tree_budget=tree_budget,
             markov_head=corrector_head, draft_mode=bb.kind,
-            **common,
+            **tree_kwargs, **common,
         )
 
     raise ValueError(f"method {method.name!r}: unknown verify {method.verify!r}")

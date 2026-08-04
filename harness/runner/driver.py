@@ -50,7 +50,8 @@ from metrics import PHASE_ORDER, sample_record, build_entry, build_timing_rollup
 # Bump on any change to the unit-record schema or the decode/instrumentation code:
 # the fingerprint below folds this in, so old cache units are missed, not reused.
 # v2: passes interleaved per sample (v1's sequential passes had warm-state bias).
-CODE_VERSION = "exp3-timings-2"
+# v3: sparked_tree gained tree_mode="beam" (+ Method.tree_kwargs pass-through).
+CODE_VERSION = "harness-3-beam"
 
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
@@ -268,7 +269,8 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
             "measure_corrector_fit": False,
             "backbones": {b.name: {"model_id": b.model_id, "kind": b.kind, "block_size": b.eff_block_size}
                           for b in backbones.values()},
-            "methods": {m.name: {"backbone": m.backbone, "corrector": m.corrector, "verify": m.verify}
+            "methods": {m.name: {"backbone": m.backbone, "corrector": m.corrector,
+                                 "verify": m.verify, "tree_kwargs": m.tree_kwargs}
                         for m in methods},
             "phase_order": list(PHASE_ORDER),
             "cpp_compact_live": cpp_compact_live,

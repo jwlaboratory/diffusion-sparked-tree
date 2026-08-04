@@ -1,5 +1,5 @@
 {
-  "fingerprint": "676aff28f4c4",
+  "fingerprint": "cebc4f8b9b91",
   "cfg": {
     "code_version": "v2-detail",
     "target": "Qwen/Qwen3-4B",
@@ -13,44 +13,33 @@
         "name": "dspark_b7",
         "model_id": "deepseek-ai/dspark_qwen3_4b_block7",
         "kind": "dspark"
+      },
+      {
+        "name": "dspark_b16",
+        "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16",
+        "kind": "dspark"
       }
     ],
     "methods": [
       {
-        "name": "dflash.chain",
+        "name": "dflash.markov.chain",
         "backbone": "dflash_b16",
-        "corrector": null,
+        "corrector": "dspark_b7_markov",
         "verify": "chain"
       },
       {
-        "name": "dflash.tree",
-        "backbone": "dflash_b16",
-        "corrector": null,
-        "verify": "tree"
-      },
-      {
-        "name": "dflash.markov.tree",
-        "backbone": "dflash_b16",
-        "corrector": "dspark_b7_markov",
-        "verify": "tree"
-      },
-      {
-        "name": "dspark.chain",
+        "name": "dspark.nomarkov.chain",
         "backbone": "dspark_b7",
         "corrector": null,
-        "verify": "chain"
+        "verify": "chain",
+        "markov": "off"
       },
       {
-        "name": "dspark.tree",
-        "backbone": "dspark_b7",
+        "name": "dspark_b16.nomarkov.chain",
+        "backbone": "dspark_b16",
         "corrector": null,
-        "verify": "tree"
-      },
-      {
-        "name": "dspark.markov.tree",
-        "backbone": "dspark_b7",
-        "corrector": "dspark_b7_markov",
-        "verify": "tree"
+        "verify": "chain",
+        "markov": "off"
       }
     ],
     "probe_corrector": "dspark_b7_markov",
@@ -75,12 +64,12 @@
     "confidence_threshold": 0.0,
     "measure_per_depth": true,
     "measure_corrector_fit": true,
-    "depth_report_limit": 7,
+    "depth_report_limit": 16,
     "force": false
   },
   "cache_files": [
-    "cache/676aff28f4c4/gsm8k__n8.json",
-    "cache/676aff28f4c4/humaneval__n8.json",
-    "cache/676aff28f4c4/mt-bench__n8.json"
+    "cache/cebc4f8b9b91/gsm8k__n8.json",
+    "cache/cebc4f8b9b91/humaneval__n8.json",
+    "cache/cebc4f8b9b91/mt-bench__n8.json"
   ]
 }

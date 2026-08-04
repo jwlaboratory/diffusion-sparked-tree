@@ -28,16 +28,26 @@ import matplotlib.pyplot as plt
 
 # method -> (backbone, verify, markov_on)
 METHOD_META = {
-    "dflash.chain":       ("DFlash-b16", "chain", False),
-    "dflash.tree":        ("DFlash-b16", "tree",  False),
-    "dflash.markov.tree": ("DFlash-b16", "tree",  True),
-    "dspark.chain":       ("DSpark-b7",  "chain", True),
-    "dspark.tree":        ("DSpark-b7",  "tree",  False),
-    "dspark.markov.tree": ("DSpark-b7",  "tree",  True),
+    "dflash.chain":              ("DFlash-b16", "chain", False),
+    "dflash.markov.chain":       ("DFlash-b16", "chain", True),
+    "dflash.tree":               ("DFlash-b16", "tree",  False),
+    "dflash.markov.tree":        ("DFlash-b16", "tree",  True),
+    "dspark.nomarkov.chain":     ("DSpark-b7",  "chain", False),
+    "dspark.chain":              ("DSpark-b7",  "chain", True),
+    "dspark.tree":               ("DSpark-b7",  "tree",  False),
+    "dspark.markov.tree":        ("DSpark-b7",  "tree",  True),
+    "dspark_b16.nomarkov.chain": ("DSpark-b16", "chain", False),
+    "dspark_b16.chain":          ("DSpark-b16", "chain", True),
+    "dspark_b16.tree":           ("DSpark-b16", "tree",  False),
+    "dspark_b16.markov.tree":    ("DSpark-b16", "tree",  True),
 }
 METHOD_COLOR = {
-    "dflash.chain": "#2a78d6", "dflash.tree": "#1baf7a", "dflash.markov.tree": "#eda100",
-    "dspark.chain": "#008300", "dspark.tree": "#4a3aa7", "dspark.markov.tree": "#e34948",
+    "dflash.chain": "#2a78d6", "dflash.markov.chain": "#6b4fc8",
+    "dflash.tree": "#1baf7a", "dflash.markov.tree": "#eda100",
+    "dspark.nomarkov.chain": "#7a9e3b", "dspark.chain": "#008300",
+    "dspark.tree": "#4a3aa7", "dspark.markov.tree": "#e34948",
+    "dspark_b16.nomarkov.chain": "#b06a2a", "dspark_b16.chain": "#0e7fa8",
+    "dspark_b16.tree": "#8a5a9e", "dspark_b16.markov.tree": "#c2186b",
 }
 POS, NEG = "#008300", "#e34948"
 SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e6e6e3"
@@ -76,11 +86,12 @@ def chart_transfer(summary, out):
     transfer = summary.get("transfer") or {}
     if not transfer:
         return
-    labelmap = {"dspark_b7": "DSpark-b7  (head's OWN backbone)",
-                "dflash_b16": "DFlash-b16  (FOREIGN backbone)"}
+    labelmap = {"dspark_b7": "DSpark-b7  (its OWN b7 head)",
+                "dspark_b16": "DSpark-b16  (its OWN b16 head)",
+                "dflash_b16": "DFlash-b16  (FOREIGN b7 head)"}
     names = list(transfer)
     vals = [transfer[n].get("accept_pct_change") for n in names]
-    fig, ax = plt.subplots(figsize=(8.5, 0.95 * len(names) + 2.4))
+    fig, ax = plt.subplots(figsize=(10.5, 0.95 * len(names) + 2.4))
     ys = list(range(len(names)))
     for y, n, v in zip(ys, names, vals):
         if v is None:
@@ -95,7 +106,7 @@ def chart_transfer(summary, out):
                 va="bottom", ha="center", fontsize=8, color=INK2)
     ax.axvline(0, color=INK2, linewidth=1)
     ax.set_yticks(ys); ax.set_yticklabels([labelmap.get(n, n) for n in names])
-    ax.set_xlabel("acceptance-length change from adding the DSpark-b7 markov head to the tree (%)")
+    ax.set_xlabel("acceptance-length change from adding the markov head to the tree (%)")
     ax.set_title("A markov head helps ONLY the backbone it was trained on",
                  fontsize=14, fontweight="bold", loc="left")
     pad = max(abs(v) for v in vals if v is not None) * 0.3 + 6
@@ -130,10 +141,11 @@ def chart_acceptance(summary, out):
     ax.set_ylabel("mean acceptance length (tokens accepted / round)")
     ax.set_title("Acceptance length by method  (higher = faster speculative decoding)",
                  fontsize=13, fontweight="bold", loc="left")
-    ax.legend(ncol=2, frameon=False, fontsize=9, loc="upper right", title="method [markov status]")
-    _caption(fig, "chain = linear (no tree); dspark.chain uses DSpark's native head. tree = markov off; "
-                  "markov.tree = markov on. Absolute values not comparable across block sizes (DFlash-b16 vs DSpark-b7).")
-    fig.tight_layout(rect=[0, 0.05, 1, 1]); fig.savefig(out, dpi=150); plt.close(fig)
+    ax.legend(ncol=1, frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.01, 1.0),
+              title="method [markov status]")
+    _caption(fig, "chain = linear (no tree); dspark*.chain uses that DSpark's own native head. tree = markov off; "
+                  "markov.tree = markov on. DFlash-b16 and DSpark-b16 share a 16-token horizon; DSpark-b7 stops at 7.")
+    fig.tight_layout(rect=[0, 0.05, 1, 1]); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
     print(f"wrote {out}")
 
 
@@ -144,7 +156,8 @@ def chart_acceptance_aggregated(summary, out):
     datasets = list(results)
     methods = [m for m in METHOD_COLOR if any(m in results[d] for d in datasets)]
     means = {m: _mean([results[d][m]["mean_accept"] for d in datasets if m in results[d]]) for m in methods}
-    fig, ax = plt.subplots(figsize=(9, 5.4))
+    methods = sorted(methods, key=lambda m: means[m], reverse=True)  # easy comparison
+    fig, ax = plt.subplots(figsize=(10, 5.4))
     xs = list(range(len(methods)))
     for x, m in zip(xs, methods):
         ax.bar(x, means[m], width=0.7, color=METHOD_COLOR[m], edgecolor=SURFACE, linewidth=1.5, zorder=3)
@@ -158,41 +171,173 @@ def chart_acceptance_aggregated(summary, out):
     print(f"wrote {out}")
 
 
-def chart_per_depth(summary, out):
+def chart_markov_delta(summary, out):
+    """Per backbone: the full 2x2 (chain/tree x markov off/on), each bar annotated
+    with its % change vs that backbone's no-markov chain baseline. Bars whose
+    method has not been run yet are skipped."""
+    groups = [  # (group label, [(sub-label, method)], shades light->dark)
+        ("DFlash  (block size 15)",
+         [("normal", "dflash.chain"), ("normal + markov", "dflash.markov.chain")],
+         ["#aac9ec", "#2a78d6"]),
+        ("DSpark  (block size 7)",
+         [("normal", "dspark.nomarkov.chain"), ("normal + markov", "dspark.chain"),
+          ("normal + markov + tree", "dspark.markov.tree")],
+         ["#a3cfa3", "#4ba64b", "#008300"]),
+    ]
+    cross = ("dflash.chain", "dspark.nomarkov.chain")  # bracket: DFlash normal vs DSpark normal
     results = summary["results"]
     datasets = list(results)
-    tree_methods = [m for m in METHOD_COLOR
-                    if METHOD_META[m][1] == "tree"
-                    and any("per_depth_accept" in results[d].get(m, {}) for d in datasets)]
-    if not tree_methods:
-        return
-    fig, ax = plt.subplots(figsize=(9, 5.4))
-    for m in tree_methods:
+
+    def mean_accept(m):
+        vals = [results[d][m]["mean_accept"] for d in datasets if m in results[d]]
+        return _mean(vals) if vals else None
+
+    fig, ax = plt.subplots(figsize=(11, 5.6))
+    bw, step, gap = 0.62, 0.95, 1.1
+    centers, y_max, x_cursor = [], 0.0, 0.0
+    bar_pos = {}  # method -> (x, value), for the cross-group bracket
+    for label, bars, shades in groups:
+        bars = [(sub, m) for sub, m in bars if mean_accept(m) is not None]
+        if not bars:
+            continue
+        xs = [x_cursor + i * step for i in range(len(bars))]
+        vals = [mean_accept(m) for _, m in bars]
+        base = vals[0]
+        for x, v, c, (sub, m) in zip(xs, vals, shades, bars):
+            ax.bar(x, v, width=bw, color=c, edgecolor=SURFACE, linewidth=1.5, zorder=3)
+            ax.text(x, v + 0.09, f"{v:.2f}", ha="center", va="bottom", fontsize=10, color=INK2)
+            if x != xs[0] and base:
+                pct = (v - base) / base * 100.0
+                ax.text(x, v + 0.42, f"{pct:+.0f}%", ha="center", va="bottom",
+                        fontsize=11, fontweight="bold", color=(POS if pct >= 0 else NEG))
+            ax.text(x, -0.28, sub, ha="center", va="top", fontsize=9, color=INK2)
+            bar_pos[m] = (x, v)
+        centers.append((sum(xs) / len(xs), label))
+        y_max = max(y_max, max(vals) + 1.0)
+        x_cursor = xs[-1] + step + gap
+    # cross-group bracket: the two no-markov chain baselines against each other
+    if cross[0] in bar_pos and cross[1] in bar_pos:
+        (xa, va), (xb, vb) = bar_pos[cross[0]], bar_pos[cross[1]]
+        top = y_max + 0.35
+        ax.plot([xa, xa, xb, xb], [va + 0.75, top, top, vb + 0.75],
+                color=INK2, linewidth=1.2, zorder=3)
+        pct = (vb - va) / va * 100.0
+        ax.text((xa + xb) / 2, top + 0.07, f"{pct:+.0f}%", ha="center", va="bottom",
+                fontsize=11.5, fontweight="bold", color=(POS if pct >= 0 else NEG))
+        y_max = top + 0.55
+    _style(ax)
+    ax.set_xticks([c for c, _ in centers])
+    ax.set_xticklabels([l for _, l in centers], fontsize=11, fontweight="bold")
+    ax.tick_params(axis="x", pad=24, length=0)
+    ax.set_ylabel("mean acceptance length (tokens accepted / round)")
+    ax.set_ylim(0, y_max + 0.4)
+    ax.set_title("Effect of the markov head and tree drafting on acceptance",
+                 fontsize=13, fontweight="bold", loc="left")
+    fig.tight_layout(); fig.savefig(out, dpi=150); plt.close(fig)
+    print(f"wrote {out}")
+
+
+def chart_acceptance_simple(summary, out):
+    """4-bar version of the aggregated chart with clean display names only."""
+    series = [
+        ("dspark.markov.tree", "SparklingTree-blocksize7"),
+        ("dflash.chain",       "Dflash-b16"),
+        ("dspark.chain",       "DSpark-b7"),
+        ("dflash.tree",        "DDtree-b16"),
+    ]
+    results = summary["results"]
+    datasets = list(results)
+    means = {m: _mean([results[d][m]["mean_accept"] for d in datasets if m in results[d]])
+             for m, _ in series}
+    series = sorted(series, key=lambda s: means[s[0]], reverse=True)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    xs = list(range(len(series)))
+    for x, (m, label) in zip(xs, series):
+        ax.bar(x, means[m], width=0.62, color=METHOD_COLOR[m], edgecolor=SURFACE, linewidth=1.5, zorder=3)
+        ax.text(x, means[m] + 0.08, f"{means[m]:.2f}", ha="center", va="bottom", fontsize=10, color=INK2)
+    _style(ax)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([label for _, label in series], fontsize=10)
+    ax.set_ylabel("mean acceptance length (tokens accepted / round)")
+    ax.set_title("Acceptance length by method", fontsize=13, fontweight="bold", loc="left")
+    fig.tight_layout(); fig.savefig(out, dpi=150); plt.close(fig)
+    print(f"wrote {out}")
+
+
+# series shown in per_depth_accept.png: (method, display label)
+# chain methods have no per_depth_accept in summary.json; their rates are derived
+# from per-round `lengths` in results_detailed.json with the same formula
+# aggregate.per_depth_accept uses: rate(d) = #(L >= d+1) / #(L >= d).
+PER_DEPTH_SERIES = [
+    ("dflash.chain",           "DFlash"),
+    ("dspark.chain",           "DSpark"),
+    ("dflash.tree",            "DDTree"),
+    ("dspark.markov.tree",     "SparklingTree BlockSize=7"),
+    ("dspark_b16.markov.tree", "SparklingTree BlockSize=16"),
+]
+
+
+def _chain_per_depth(detailed, method, dataset, depth_limit):
+    lengths = (detailed["per_dataset"][dataset]["methods"].get(method) or {}).get("lengths") or []
+    rates = {}
+    for d in range(1, depth_limit + 1):
+        reached = sum(1 for a in lengths if a >= d)
+        deeper = sum(1 for a in lengths if a >= d + 1)
+        rates[d] = (deeper / reached) if reached else None
+    return rates
+
+
+def chart_per_depth(summary, detailed, out):
+    results = summary["results"]
+    datasets = list(results)
+    depth_limit = summary["config"].get("depth_report_limit", 16)
+    series = []
+    for m, label in PER_DEPTH_SERIES:
         depth_vals = {}
         for d in datasets:
-            for depth, rate in (results[d].get(m, {}).get("per_depth_accept") or {}).items():
+            rates = results[d].get(m, {}).get("per_depth_accept")
+            if not rates and METHOD_META[m][1] == "chain" and detailed is not None:
+                rates = _chain_per_depth(detailed, m, d, depth_limit)
+            for depth, rate in (rates or {}).items():
                 if rate is not None:
                     depth_vals.setdefault(int(depth), []).append(rate)
         if not depth_vals:
             continue
         depths = sorted(depth_vals)
         means = [_mean(depth_vals[dd]) for dd in depths]
-        ls = "-" if METHOD_META[m][2] else "--"
-        ax.plot(depths, means, color=METHOD_COLOR[m], linewidth=2.2, linestyle=ls,
-                marker="o", markersize=6, markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3)
-        ty = min(max(means[-1], 0.61), 0.99)  # keep the end-label inside the zoomed range
-        ax.text(depths[-1] + 0.1, ty, _label(m), va="center", ha="left",
+        # The last depth of a bounded drafter always reads 0 (nothing can be
+        # accepted past its horizon) -- that's an artifact, not acceptance decay.
+        while means and means[-1] == 0.0:
+            depths.pop(); means.pop()
+        if depths:
+            series.append((m, label, depths, means))
+    if not series:
+        return
+    max_depth = max(s[2][-1] for s in series)
+    all_means = [v for s in series for v in s[3]]
+    # zoom to the high range, but never clip a series that dips below it
+    y_lo = min(0.75, max(0.0, min(all_means) - 0.03))
+    # end-labels: nudge apart any that share an end-depth region
+    label_y = [min(max(means[-1] + 0.013, y_lo + 0.01), 0.99) for _, _, _, means in series]
+    order = sorted(range(len(series)), key=lambda i: label_y[i])
+    for a, b in zip(order, order[1:]):
+        if abs(series[a][2][-1] - series[b][2][-1]) <= 1 and label_y[b] - label_y[a] < 0.035:
+            label_y[b] = label_y[a] + 0.035
+    fig, ax = plt.subplots(figsize=(10.5, 5.6))
+    for (m, label, depths, means), ty in zip(series, label_y):
+        ax.plot(depths, means, color=METHOD_COLOR[m], linewidth=2.2,
+                marker="o", markersize=5.5, markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3)
+        ax.text(depths[-1] + 0.15, ty, label, va="center", ha="left",
                 fontsize=8.5, color=METHOD_COLOR[m], fontweight="bold")
     _style(ax)
-    ax.set_xlabel("tree depth (token position within a drafted block)")
+    ax.set_xlabel("depth (token position within a drafted block)")
     ax.set_ylabel("conditional accept rate  P(accept depth d | reached d)")
-    ax.set_ylim(0.6, 1.0)  # zoomed to the high range
-    ax.set_title("Per-depth acceptance (avg across datasets); solid = markov on, dashed = off",
+    ax.set_ylim(y_lo, 1.0)
+    ax.set_title("Per-depth acceptance (avg across datasets)",
                  fontsize=12.5, fontweight="bold", loc="left")
-    ax.set_xlim(right=max(ax.get_xticks()) + 3)
-    _caption(fig, "Compared at depths the b7 head was trained on, so a foreign penalty is not just depth extrapolation. "
-                  "DSpark's markov (solid red) lifts deep acceptance; the same head on DFlash (solid yellow) does not.")
-    fig.tight_layout(rect=[0, 0.05, 1, 1]); fig.savefig(out, dpi=150); plt.close(fig)
+    ax.set_xticks(range(1, max_depth + 1))
+    ax.set_xlim(0.5, max_depth + 4.5)  # right margin holds the series end-labels
+    fig.tight_layout(); fig.savefig(out, dpi=150); plt.close(fig)
     print(f"wrote {out}")
 
 
@@ -293,15 +438,17 @@ def main():
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "summary.json"
     summary = json.loads(Path(path).read_text())
     outdir = Path(path).parent
+    detailed_path = outdir / "results_detailed.json"
+    detailed = json.loads(detailed_path.read_text()) if detailed_path.exists() else None
     chart_transfer(summary, outdir / "transfer.png")
     chart_acceptance(summary, outdir / "acceptance_by_method.png")
     chart_acceptance_aggregated(summary, outdir / "acceptance_by_method_aggregated.png")
-    chart_per_depth(summary, outdir / "per_depth_accept.png")
+    chart_acceptance_simple(summary, outdir / "acceptance_by_method_simple.png")
+    chart_markov_delta(summary, outdir / "acceptance_markov_delta.png")
+    chart_per_depth(summary, detailed, outdir / "per_depth_accept.png")
     chart_corrector_fit(summary, outdir / "corrector_fit.png")
 
-    detailed_path = outdir / "results_detailed.json"
-    if detailed_path.exists():
-        detailed = json.loads(detailed_path.read_text())
+    if detailed is not None:
         chart_distribution(detailed, outdir / "acceptance_distribution.png")
         chart_speed(detailed, outdir / "decode_speed.png")
 

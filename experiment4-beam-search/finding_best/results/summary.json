@@ -1,0 +1,4751 @@
+{
+  "config": {
+    "target": "Qwen/Qwen3-4B",
+    "tasks": [
+      [
+        "gsm8k",
+        4
+      ],
+      [
+        "humaneval",
+        4
+      ],
+      [
+        "mt-bench",
+        4
+      ]
+    ],
+    "tree_budgets": [
+      64,
+      256
+    ],
+    "passes": [
+      "clean",
+      "instrumented"
+    ],
+    "temperature": 0.0,
+    "max_new_tokens": 512,
+    "seed": 0,
+    "warmup_tokens": 256,
+    "discard_first_sample": true,
+    "gpu": "H100",
+    "cpu": 8,
+    "measure_corrector_fit": false,
+    "backbones": {
+      "dspark_b16": {
+        "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16",
+        "kind": "dspark",
+        "block_size": 16
+      }
+    },
+    "methods": {
+      "beam.geo50": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "geometric",
+            "decay": 0.5
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.geo60": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "geometric",
+            "decay": 0.6
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.geo75": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "geometric",
+            "decay": 0.75
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.flat": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "flat"
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.invgeo75": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "inv_geometric",
+            "decay": 0.75
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.invgeo50": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "inv_geometric",
+            "decay": 0.5
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.depth8": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "flat_depth",
+            "depth": 8
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "beam.depth4": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "beam",
+          "beam_schedule": {
+            "kind": "flat_depth",
+            "depth": 4
+          },
+          "beam_candidates": 2048
+        }
+      },
+      "bestfirst.ref": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": null
+      }
+    },
+    "phase_order": [
+      "draft_forward",
+      "candidate_build",
+      "candidate_pack",
+      "verify",
+      "walk_accept",
+      "kv_update",
+      "state_carry",
+      "unaccounted"
+    ],
+    "cpp_compact_live": true,
+    "code_version": "harness-3-beam",
+    "fingerprint": "2d9f63cfbb4c",
+    "metric": "decode timings (two-pass) + acceptance"
+  },
+  "results": {
+    "clean": {
+      "64": {
+        "gsm8k": {
+          "beam.geo50": {
+            "tps_decode": 169.52841507330112,
+            "ttft": 0.028753846250008763,
+            "output_tokens": 1307,
+            "rounds": 186,
+            "decode_time": 7.709622008999943,
+            "mean_accept": 7.037634408602151,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 197.2036926779226,
+            "ttft": 0.028309029249999895,
+            "output_tokens": 1307,
+            "rounds": 159,
+            "decode_time": 6.627664939999988,
+            "mean_accept": 8.238993710691824,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 229.8622774657834,
+            "ttft": 0.02879486199999448,
+            "output_tokens": 1294,
+            "rounds": 132,
+            "decode_time": 5.629457839999958,
+            "mean_accept": 9.833333333333334,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 254.24603540950068,
+            "ttft": 0.02865739450000504,
+            "output_tokens": 1259,
+            "rounds": 114,
+            "decode_time": 4.951896291999972,
+            "mean_accept": 11.078947368421053,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 213.81662173706283,
+            "ttft": 0.02868134200000938,
+            "output_tokens": 1293,
+            "rounds": 143,
+            "decode_time": 6.047238000000036,
+            "mean_accept": 9.06993006993007,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 179.02748154942086,
+            "ttft": 0.0287849137499947,
+            "output_tokens": 1298,
+            "rounds": 176,
+            "decode_time": 7.250283524999958,
+            "mean_accept": 7.380681818181818,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 197.8314835682651,
+            "ttft": 0.027925088249997287,
+            "output_tokens": 1272,
+            "rounds": 156,
+            "decode_time": 6.429714710000013,
+            "mean_accept": 8.173076923076923,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 122.16138370951107,
+            "ttft": 0.028754519750002316,
+            "output_tokens": 1293,
+            "rounds": 262,
+            "decode_time": 10.584359481999968,
+            "mean_accept": 4.942748091603053,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 37.39261309462488,
+            "ttft": 0.02894500274999956,
+            "output_tokens": 1309,
+            "rounds": 112,
+            "decode_time": 35.006914245000075,
+            "mean_accept": 11.723214285714286,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "beam.geo50": {
+            "tps_decode": 162.11947858205738,
+            "ttft": 0.02836382524995429,
+            "output_tokens": 1967,
+            "rounds": 301,
+            "decode_time": 12.133026932999883,
+            "mean_accept": 6.554817275747508,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 175.72431588694255,
+            "ttft": 0.02832812374998639,
+            "output_tokens": 2040,
+            "rounds": 280,
+            "decode_time": 11.60909342399998,
+            "mean_accept": 7.325,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 189.824567877637,
+            "ttft": 0.028837741000018013,
+            "output_tokens": 2033,
+            "rounds": 255,
+            "decode_time": 10.709888729,
+            "mean_accept": 8.03921568627451,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 199.5108491502108,
+            "ttft": 0.02877849749998518,
+            "output_tokens": 1989,
+            "rounds": 231,
+            "decode_time": 9.969382660000065,
+            "mean_accept": 8.636363636363637,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 165.3385757270531,
+            "ttft": 0.02804277499998875,
+            "output_tokens": 2016,
+            "rounds": 292,
+            "decode_time": 12.193161766000003,
+            "mean_accept": 6.924657534246576,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 155.74764165097818,
+            "ttft": 0.02909612400000583,
+            "output_tokens": 2033,
+            "rounds": 320,
+            "decode_time": 13.0531671519999,
+            "mean_accept": 6.36875,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 179.05985577290443,
+            "ttft": 0.02879057974999455,
+            "output_tokens": 1982,
+            "rounds": 268,
+            "decode_time": 11.068924363000178,
+            "mean_accept": 7.414179104477612,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 119.99744484726513,
+            "ttft": 0.02843664124998213,
+            "output_tokens": 2016,
+            "rounds": 414,
+            "decode_time": 16.800357728999984,
+            "mean_accept": 4.869565217391305,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 27.988546321244957,
+            "ttft": 0.028574365999958218,
+            "output_tokens": 1994,
+            "rounds": 225,
+            "decode_time": 71.24342854799988,
+            "mean_accept": 8.924444444444445,
+            "budget_invariant": false
+          }
+        },
+        "mt-bench": {
+          "beam.geo50": {
+            "tps_decode": 91.88061384593148,
+            "ttft": 0.0292548512499593,
+            "output_tokens": 1121,
+            "rounds": 300,
+            "decode_time": 12.20061504899968,
+            "mean_accept": 3.75,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 95.10938214157524,
+            "ttft": 0.029184877749969473,
+            "output_tokens": 1228,
+            "rounds": 318,
+            "decode_time": 12.911449663000212,
+            "mean_accept": 3.893081761006289,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 91.21214824163367,
+            "ttft": 0.028683928500015554,
+            "output_tokens": 1117,
+            "rounds": 288,
+            "decode_time": 12.246175773000232,
+            "mean_accept": 3.888888888888889,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 81.24287327443194,
+            "ttft": 0.02843602650000321,
+            "output_tokens": 1102,
+            "rounds": 318,
+            "decode_time": 13.564266693000036,
+            "mean_accept": 3.4748427672955975,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 64.0991902578013,
+            "ttft": 0.0297766087500122,
+            "output_tokens": 1107,
+            "rounds": 414,
+            "decode_time": 17.270108960000016,
+            "mean_accept": 2.7004830917874396,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 74.69540089918456,
+            "ttft": 0.027303849999952945,
+            "output_tokens": 1115,
+            "rounds": 373,
+            "decode_time": 14.927291192999974,
+            "mean_accept": 3.0107238605898123,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 91.75476574430343,
+            "ttft": 0.028116923750019396,
+            "output_tokens": 1178,
+            "rounds": 311,
+            "decode_time": 12.838570187000187,
+            "mean_accept": 3.8038585209003215,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 91.42975661068043,
+            "ttft": 0.027787955250005325,
+            "output_tokens": 1192,
+            "rounds": 324,
+            "decode_time": 13.037330997999788,
+            "mean_accept": 3.682098765432099,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 12.527827892810762,
+            "ttft": 0.029383111749950785,
+            "output_tokens": 1130,
+            "rounds": 284,
+            "decode_time": 90.19919571599985,
+            "mean_accept": 4.003521126760563,
+            "budget_invariant": false
+          }
+        }
+      },
+      "256": {
+        "gsm8k": {
+          "beam.geo50": {
+            "tps_decode": 204.62994917216707,
+            "ttft": 0.028408252749997587,
+            "output_tokens": 1285,
+            "rounds": 152,
+            "decode_time": 6.279628203000016,
+            "mean_accept": 8.480263157894736,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 228.52641811274742,
+            "ttft": 0.029043666249975786,
+            "output_tokens": 1298,
+            "rounds": 132,
+            "decode_time": 5.679868483999996,
+            "mean_accept": 9.863636363636363,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 245.33594119101545,
+            "ttft": 0.029500739500022632,
+            "output_tokens": 1293,
+            "rounds": 116,
+            "decode_time": 5.2703244119999795,
+            "mean_accept": 11.181034482758621,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 267.4506159876486,
+            "ttft": 0.029209963249982707,
+            "output_tokens": 1297,
+            "rounds": 109,
+            "decode_time": 4.849493411000026,
+            "mean_accept": 11.926605504587156,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 260.2517648617813,
+            "ttft": 0.02843484524998985,
+            "output_tokens": 1259,
+            "rounds": 112,
+            "decode_time": 4.837623294000139,
+            "mean_accept": 11.276785714285714,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 217.38567518249766,
+            "ttft": 0.02864441049997879,
+            "output_tokens": 1239,
+            "rounds": 136,
+            "decode_time": 5.699547585000005,
+            "mean_accept": 9.110294117647058,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 203.49408533450247,
+            "ttft": 0.028918795499990324,
+            "output_tokens": 1284,
+            "rounds": 151,
+            "decode_time": 6.309765700999947,
+            "mean_accept": 8.52980132450331,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 122.81302481063261,
+            "ttft": 0.028473621000031812,
+            "output_tokens": 1293,
+            "rounds": 261,
+            "decode_time": 10.528199285000085,
+            "mean_accept": 4.961685823754789,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 18.43586637549243,
+            "ttft": 0.028087625749989797,
+            "output_tokens": 1307,
+            "rounds": 104,
+            "decode_time": 70.89441707699996,
+            "mean_accept": 12.60576923076923,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "beam.geo50": {
+            "tps_decode": 176.90167632668272,
+            "ttft": 0.02868626324999468,
+            "output_tokens": 1922,
+            "rounds": 257,
+            "decode_time": 10.864792464999937,
+            "mean_accept": 7.494163424124514,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 197.26847708331394,
+            "ttft": 0.02961968474997434,
+            "output_tokens": 1996,
+            "rounds": 236,
+            "decode_time": 10.11819034400014,
+            "mean_accept": 8.491525423728813,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 211.36387257608484,
+            "ttft": 0.028367832500009627,
+            "output_tokens": 1987,
+            "rounds": 219,
+            "decode_time": 9.400849709,
+            "mean_accept": 9.114155251141552,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 231.55135516037046,
+            "ttft": 0.028393000750014608,
+            "output_tokens": 1995,
+            "rounds": 200,
+            "decode_time": 8.615799284000218,
+            "mean_accept": 10.015,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 186.8102718065971,
+            "ttft": 0.028592706500063514,
+            "output_tokens": 1948,
+            "rounds": 240,
+            "decode_time": 10.42769212400026,
+            "mean_accept": 8.191666666666666,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 176.3033293727541,
+            "ttft": 0.02838775300006091,
+            "output_tokens": 2005,
+            "rounds": 274,
+            "decode_time": 11.37244547299997,
+            "mean_accept": 7.346715328467154,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 193.83920771818399,
+            "ttft": 0.02864275025009988,
+            "output_tokens": 1983,
+            "rounds": 248,
+            "decode_time": 10.230128483000271,
+            "mean_accept": 8.028225806451612,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 120.6970141781634,
+            "ttft": 0.028644108999998252,
+            "output_tokens": 1995,
+            "rounds": 404,
+            "decode_time": 16.52899215100001,
+            "mean_accept": 4.945544554455446,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 13.2724848610135,
+            "ttft": 0.0284172945000023,
+            "output_tokens": 1966,
+            "rounds": 198,
+            "decode_time": 148.12599302900048,
+            "mean_accept": 9.974747474747474,
+            "budget_invariant": false
+          }
+        },
+        "mt-bench": {
+          "beam.geo50": {
+            "tps_decode": 100.26823098430133,
+            "ttft": 0.02961199549997673,
+            "output_tokens": 1099,
+            "rounds": 264,
+            "decode_time": 10.960600273999717,
+            "mean_accept": 4.174242424242424,
+            "budget_invariant": false
+          },
+          "beam.geo60": {
+            "tps_decode": 99.58788924975471,
+            "ttft": 0.029111599250029485,
+            "output_tokens": 1145,
+            "rounds": 269,
+            "decode_time": 11.497381947000349,
+            "mean_accept": 4.286245353159852,
+            "budget_invariant": false
+          },
+          "beam.geo75": {
+            "tps_decode": 102.45896306982415,
+            "ttft": 0.028465206749899608,
+            "output_tokens": 1082,
+            "rounds": 240,
+            "decode_time": 10.560325496000132,
+            "mean_accept": 4.5125,
+            "budget_invariant": false
+          },
+          "beam.flat": {
+            "tps_decode": 94.42476190146303,
+            "ttft": 0.029725372749965118,
+            "output_tokens": 1068,
+            "rounds": 256,
+            "decode_time": 11.31059246000018,
+            "mean_accept": 4.19140625,
+            "budget_invariant": false
+          },
+          "beam.invgeo75": {
+            "tps_decode": 66.55421119781083,
+            "ttft": 0.029028154999878097,
+            "output_tokens": 1070,
+            "rounds": 366,
+            "decode_time": 16.077119399999674,
+            "mean_accept": 2.931693989071038,
+            "budget_invariant": false
+          },
+          "beam.invgeo50": {
+            "tps_decode": 70.33494773337614,
+            "ttft": 0.030226335249949443,
+            "output_tokens": 1096,
+            "rounds": 355,
+            "decode_time": 15.582580713000425,
+            "mean_accept": 3.095774647887324,
+            "budget_invariant": false
+          },
+          "beam.depth8": {
+            "tps_decode": 103.47372033327188,
+            "ttft": 0.02904326350011388,
+            "output_tokens": 1137,
+            "rounds": 261,
+            "decode_time": 10.988297283000065,
+            "mean_accept": 4.383141762452107,
+            "budget_invariant": false
+          },
+          "beam.depth4": {
+            "tps_decode": 100.41562123411772,
+            "ttft": 0.029032693750025373,
+            "output_tokens": 1068,
+            "rounds": 263,
+            "decode_time": 10.635795376000033,
+            "mean_accept": 4.08745247148289,
+            "budget_invariant": false
+          },
+          "bestfirst.ref": {
+            "tps_decode": 5.805735148216167,
+            "ttft": 0.028711180750008225,
+            "output_tokens": 1070,
+            "rounds": 242,
+            "decode_time": 184.30051882899988,
+            "mean_accept": 4.491735537190083,
+            "budget_invariant": false
+          }
+        }
+      }
+    },
+    "instrumented": {
+      "64": {
+        "gsm8k": {
+          "beam.geo50": {
+            "tps_decode": 169.2187022730963,
+            "ttft": 0.028324716500002012,
+            "output_tokens": 1307,
+            "rounds": 186,
+            "decode_time": 7.723732556999977,
+            "mean_accept": 7.037634408602151,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.1642378389999237,
+                "sec_per_token": 0.0008907711086456953,
+                "share": 0.15073513102739183
+              },
+              "candidate_build": {
+                "sec": 0.46852492399983703,
+                "sec_per_token": 0.0003584735455239763,
+                "share": 0.06066042817280298
+              },
+              "candidate_pack": {
+                "sec": 0.037496948999887536,
+                "sec_per_token": 2.8689325937174856e-05,
+                "share": 0.004854770504178612
+              },
+              "verify": {
+                "sec": 5.550882745999928,
+                "sec_per_token": 0.004247041121652585,
+                "share": 0.7186787871065258
+              },
+              "walk_accept": {
+                "sec": 0.03203798899997423,
+                "sec_per_token": 2.451261591428786e-05,
+                "share": 0.00414799305433464
+              },
+              "kv_update": {
+                "sec": 0.257779857000088,
+                "sec_per_token": 0.00019723018898246976,
+                "share": 0.033375036628691075
+              },
+              "state_carry": {
+                "sec": 0.008334788999960097,
+                "sec_per_token": 6.377038255516524e-06,
+                "share": 0.001079114137944396
+              },
+              "unaccounted": {
+                "sec": 0.037455330000398135,
+                "sec_per_token": 2.8657482785308442e-05,
+                "share": 0.004849382047343492
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.10053531500010138,
+                "sec_per_token": 7.692066947215102e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.32824454000027004,
+                "sec_per_token": 0.00025114348890609796
+              },
+              "candidate_build.visibility": {
+                "sec": 0.019114830000106053,
+                "sec_per_token": 1.4624965570088794e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16698213399997996,
+              "share": 0.02161935732078721
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 200.35284192644,
+            "ttft": 0.028049384250007137,
+            "output_tokens": 1307,
+            "rounds": 159,
+            "decode_time": 6.523491193999973,
+            "mean_accept": 8.238993710691824,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.9713387329997971,
+                "sec_per_token": 0.0007431818921192021,
+                "share": 0.14889860415435108
+              },
+              "candidate_build": {
+                "sec": 0.4429135500002559,
+                "sec_per_token": 0.00033887800306063955,
+                "share": 0.06789517097955597
+              },
+              "candidate_pack": {
+                "sec": 0.0318478089998564,
+                "sec_per_token": 2.436710711542188e-05,
+                "share": 0.004882019160100752
+              },
+              "verify": {
+                "sec": 4.634496590000083,
+                "sec_per_token": 0.003545904047436942,
+                "share": 0.7104319531024574
+              },
+              "walk_accept": {
+                "sec": 0.027156613000002494,
+                "sec_per_token": 2.0777821729152636e-05,
+                "share": 0.004162895632476668
+              },
+              "kv_update": {
+                "sec": 0.21258351900002026,
+                "sec_per_token": 0.00016264997628157634,
+                "share": 0.03258738498728188
+              },
+              "state_carry": {
+                "sec": 0.007156315999949925,
+                "sec_per_token": 5.47537566943376e-06,
+                "share": 0.0010970070759859377
+              },
+              "unaccounted": {
+                "sec": 0.03221810400002312,
+                "sec_per_token": 2.465042387147905e-05,
+                "share": 0.004938782477342185
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.08543728099999726,
+                "sec_per_token": 6.536899846977602e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.3226265180000496,
+                "sec_per_token": 0.00024684507880646487
+              },
+              "candidate_build.visibility": {
+                "sec": 0.016556353000225954,
+                "sec_per_token": 1.2667446824962475e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16377995999998518,
+              "share": 0.025106182430448123
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 228.4288653146375,
+            "ttft": 0.028631319000002264,
+            "output_tokens": 1294,
+            "rounds": 132,
+            "decode_time": 5.664783206000024,
+            "mean_accept": 9.833333333333334,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.8231638269998456,
+                "sec_per_token": 0.0006361389698607772,
+                "share": 0.1453125030677197
+              },
+              "candidate_build": {
+                "sec": 0.4755193499997148,
+                "sec_per_token": 0.00036748017774321083,
+                "share": 0.08394308002750296
+              },
+              "candidate_pack": {
+                "sec": 0.026719338999924958,
+                "sec_per_token": 2.0648639103496876e-05,
+                "share": 0.004716745200703245
+              },
+              "verify": {
+                "sec": 3.929585669000204,
+                "sec_per_token": 0.003036774087326278,
+                "share": 0.6936868589848356
+              },
+              "walk_accept": {
+                "sec": 0.02290143700001579,
+                "sec_per_token": 1.769817387945579e-05,
+                "share": 0.004042773777425242
+              },
+              "kv_update": {
+                "sec": 0.18126777199989874,
+                "sec_per_token": 0.00014008328593500676,
+                "share": 0.031999066055679516
+              },
+              "state_carry": {
+                "sec": 0.005964027999908694,
+                "sec_per_token": 4.608986089573952e-06,
+                "share": 0.0010528254626923261
+              },
+              "unaccounted": {
+                "sec": 0.02728675000048497,
+                "sec_per_token": 2.108713292154944e-05,
+                "share": 0.004816909846008475
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.07051037300011842,
+                "sec_per_token": 5.449024188571748e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.37505801799999006,
+                "sec_per_token": 0.00028984390880988414
+              },
+              "candidate_build.visibility": {
+                "sec": 0.013899203999812926,
+                "sec_per_token": 1.0741270478989896e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17237503400002652,
+              "share": 0.03042923757743286
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 250.30239820015888,
+            "ttft": 0.028561209750009198,
+            "output_tokens": 1259,
+            "rounds": 114,
+            "decode_time": 5.029915850000037,
+            "mean_accept": 11.078947368421053,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.7163887570001322,
+                "sec_per_token": 0.0005690141040509389,
+                "share": 0.14242559485366477
+              },
+              "candidate_build": {
+                "sec": 0.5034230849998806,
+                "sec_per_token": 0.00039985947974573524,
+                "share": 0.10008578672342539
+              },
+              "candidate_pack": {
+                "sec": 0.02293296499985331,
+                "sec_per_token": 1.821522239861264e-05,
+                "share": 0.004559313850121993
+              },
+              "verify": {
+                "sec": 3.4059476930000585,
+                "sec_per_token": 0.00270528013741069,
+                "share": 0.677138106197151
+              },
+              "walk_accept": {
+                "sec": 0.020138959000163936,
+                "sec_per_token": 1.5995996028724334e-05,
+                "share": 0.004003836167589919
+              },
+              "kv_update": {
+                "sec": 0.1573887439999737,
+                "sec_per_token": 0.0001250109166004557,
+                "share": 0.03129053222629411
+              },
+              "state_carry": {
+                "sec": 0.005131787000038912,
+                "sec_per_token": 4.076081810991987e-06,
+                "share": 0.0010202530525513411
+              },
+              "unaccounted": {
+                "sec": 0.023927525999908994,
+                "sec_per_token": 1.9005183478879264e-05,
+                "share": 0.004757043002997519
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.06084850500000982,
+                "sec_per_token": 4.833082208102448e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.41632854100029704,
+                "sec_per_token": 0.0003306819229549619
+              },
+              "candidate_build.visibility": {
+                "sec": 0.012018177000101105,
+                "sec_per_token": 9.545811755441704e-06
+              }
+            },
+            "cold_round": {
+              "sec": 0.1746363340000272,
+              "share": 0.03471953392620394
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 215.16162438597513,
+            "ttft": 0.027883446749992657,
+            "output_tokens": 1293,
+            "rounds": 143,
+            "decode_time": 6.009435947000043,
+            "mean_accept": 9.06993006993007,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.8814657089998832,
+                "sec_per_token": 0.0006817213526681232,
+                "share": 0.1466802736186776
+              },
+              "candidate_build": {
+                "sec": 0.4903732920003563,
+                "sec_per_token": 0.000379252352668489,
+                "share": 0.08160055225235481
+              },
+              "candidate_pack": {
+                "sec": 0.028766335000184995,
+                "sec_per_token": 2.2247745553120646e-05,
+                "share": 0.004786861072135293
+              },
+              "verify": {
+                "sec": 4.18858458699988,
+                "sec_per_token": 0.0032394312351120497,
+                "share": 0.6970012866333744
+              },
+              "walk_accept": {
+                "sec": 0.025004165000282796,
+                "sec_per_token": 1.9338101314990563e-05,
+                "share": 0.004160817291473932
+              },
+              "kv_update": {
+                "sec": 0.19291696700025796,
+                "sec_per_token": 0.00014920105723144466,
+                "share": 0.032102341834022476
+              },
+              "state_carry": {
+                "sec": 0.006416204000430525,
+                "sec_per_token": 4.9622614079122394e-06,
+                "share": 0.0010676882251542334
+              },
+              "unaccounted": {
+                "sec": 0.02936083499875508,
+                "sec_per_token": 2.2707529001357372e-05,
+                "share": 0.004885788825723692
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.07661570100020754,
+                "sec_per_token": 5.925421577742269e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.38144440299996063,
+                "sec_per_token": 0.0002950072722350817
+              },
+              "candidate_build.visibility": {
+                "sec": 0.014730775999993284,
+                "sec_per_token": 1.1392711523583359e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16654785300001151,
+              "share": 0.027714390247083588
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 178.86475545105992,
+            "ttft": 0.028882672250013286,
+            "output_tokens": 1298,
+            "rounds": 176,
+            "decode_time": 7.256879628000007,
+            "mean_accept": 7.380681818181818,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.0950760589999362,
+                "sec_per_token": 0.0008436641440677475,
+                "share": 0.15090178081150543
+              },
+              "candidate_build": {
+                "sec": 0.417372214000153,
+                "sec_per_token": 0.0003215502419107496,
+                "share": 0.05751400538459539
+              },
+              "candidate_pack": {
+                "sec": 0.035599392000008834,
+                "sec_per_token": 2.742634206472175e-05,
+                "share": 0.004905605966323574
+              },
+              "verify": {
+                "sec": 5.226225985999889,
+                "sec_per_token": 0.004026368248073875,
+                "share": 0.7201753720476461
+              },
+              "walk_accept": {
+                "sec": 0.030340320999755477,
+                "sec_per_token": 2.337466949133704e-05,
+                "share": 0.004180904542317351
+              },
+              "kv_update": {
+                "sec": 0.24182174900032294,
+                "sec_per_token": 0.00018630335053954002,
+                "share": 0.033323103233967914
+              },
+              "state_carry": {
+                "sec": 0.007978408999775866,
+                "sec_per_token": 6.146694144665536e-06,
+                "share": 0.001099426945018063
+              },
+              "unaccounted": {
+                "sec": 0.03594968600016557,
+                "sec_per_token": 2.7696214175782412e-05,
+                "share": 0.004953876575471501
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.09501009299999907,
+                "sec_per_token": 7.319729815100083e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.28471996199999694,
+                "sec_per_token": 0.00021935282126347993
+              },
+              "candidate_build.visibility": {
+                "sec": 0.01795988499992518,
+                "sec_per_token": 1.383658320487302e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1665158120000001,
+              "share": 0.022945924493154614
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 196.1776867824782,
+            "ttft": 0.028610104000001968,
+            "output_tokens": 1272,
+            "rounds": 156,
+            "decode_time": 6.483917824000002,
+            "mean_accept": 8.173076923076923,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.9681888989998555,
+                "sec_per_token": 0.0007611547948112072,
+                "share": 0.14932158692945446
+              },
+              "candidate_build": {
+                "sec": 0.427406174999831,
+                "sec_per_token": 0.0003360111438677917,
+                "share": 0.06591788893711785
+              },
+              "candidate_pack": {
+                "sec": 0.031878057000000126,
+                "sec_per_token": 2.5061365566037835e-05,
+                "share": 0.004916480724355354
+              },
+              "verify": {
+                "sec": 4.611137255999822,
+                "sec_per_token": 0.003625107905660237,
+                "share": 0.7111652832692995
+              },
+              "walk_accept": {
+                "sec": 0.027064009000042688,
+                "sec_per_token": 2.1276736635253685e-05,
+                "share": 0.004174020975384076
+              },
+              "kv_update": {
+                "sec": 0.2126176659996588,
+                "sec_per_token": 0.00016715225314438585,
+                "share": 0.032791542362344835
+              },
+              "state_carry": {
+                "sec": 0.007070472000037853,
+                "sec_per_token": 5.55854716984108e-06,
+                "share": 0.0010904629256507138
+              },
+              "unaccounted": {
+                "sec": 0.031661102000740016,
+                "sec_per_token": 2.489080345970127e-05,
+                "share": 0.0048830202448815006
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.08399949300002163,
+                "sec_per_token": 6.603733726416795e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.3098046580002318,
+                "sec_per_token": 0.00024355712106936464
+              },
+              "candidate_build.visibility": {
+                "sec": 0.01602651699984392,
+                "sec_per_token": 1.2599463050191761e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16689418800001476,
+              "share": 0.025739713631511736
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 118.55661142507695,
+            "ttft": 0.028444975999995847,
+            "output_tokens": 1293,
+            "rounds": 262,
+            "decode_time": 10.906182156,
+            "mean_accept": 4.942748091603053,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6735110960000839,
+                "sec_per_token": 0.001294285457076631,
+                "share": 0.15344609800776227
+              },
+              "candidate_build": {
+                "sec": 0.5131301810001787,
+                "sec_per_token": 0.0003968524215005249,
+                "share": 0.04704947832893859
+              },
+              "candidate_pack": {
+                "sec": 0.05401672399980839,
+                "sec_per_token": 4.1776275328544775e-05,
+                "share": 0.004952853640913312
+              },
+              "verify": {
+                "sec": 8.01625394999968,
+                "sec_per_token": 0.00619973236658908,
+                "share": 0.7350192611251742
+              },
+              "walk_accept": {
+                "sec": 0.04626979599999004,
+                "sec_per_token": 3.578483836039446e-05,
+                "share": 0.004242529176402474
+              },
+              "kv_update": {
+                "sec": 0.37365591400009635,
+                "sec_per_token": 0.00028898369218878294,
+                "share": 0.034260927303009586
+              },
+              "state_carry": {
+                "sec": 0.011960350000862263,
+                "sec_per_token": 9.250077340187365e-06,
+                "share": 0.0010966578248725028
+              },
+              "unaccounted": {
+                "sec": 0.05406266099927848,
+                "sec_per_token": 4.1811802783664716e-05,
+                "share": 0.004957065655604889
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14317297999986067,
+                "sec_per_token": 0.00011072929621025574
+              },
+              "candidate_build.expand": {
+                "sec": 0.31480987999989907,
+                "sec_per_token": 0.00024347245166272163
+              },
+              "candidate_build.visibility": {
+                "sec": 0.027312034000374297,
+                "sec_per_token": 2.1122996133313455e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1633214840000221,
+              "share": 0.014975128937322153
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 37.49490576529802,
+            "ttft": 0.02878969175000634,
+            "output_tokens": 1309,
+            "rounds": 112,
+            "decode_time": 34.91140925100004,
+            "mean_accept": 11.723214285714286,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.7349434719999692,
+                "sec_per_token": 0.0005614541420931774,
+                "share": 0.021051670149319933
+              },
+              "candidate_build": {
+                "sec": 29.088663588000173,
+                "sec_per_token": 0.02222205010542412,
+                "share": 0.8332136746146084
+              },
+              "candidate_pack": {
+                "sec": 0.047142277000233435,
+                "sec_per_token": 3.601396256702325e-05,
+                "share": 0.0013503401326855071
+              },
+              "verify": {
+                "sec": 3.4955716410000264,
+                "sec_per_token": 0.0026704137822765673,
+                "share": 0.10012691312081295
+              },
+              "walk_accept": {
+                "sec": 0.025290143000319176,
+                "sec_per_token": 1.932020091697416e-05,
+                "share": 0.0007244091127485705
+              },
+              "kv_update": {
+                "sec": 0.15387734699976363,
+                "sec_per_token": 0.00011755335905253142,
+                "share": 0.0044076521200689086
+              },
+              "state_carry": {
+                "sec": 0.005772362999891811,
+                "sec_per_token": 4.409750190902835e-06,
+                "share": 0.00016534316785640676
+              },
+              "unaccounted": {
+                "sec": 0.028003850999624547,
+                "sec_per_token": 2.1393316271676505e-05,
+                "share": 0.0008021403776137274
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 13.892438910999772,
+                "sec_per_token": 0.010613016738731683
+              },
+              "candidate_build.expand": {
+                "sec": 15.036656316000204,
+                "sec_per_token": 0.011487132403361501
+              },
+              "candidate_build.visibility": {
+                "sec": 0.00900219600003993,
+                "sec_per_token": 6.8771550802444085e-06
+              }
+            },
+            "cold_round": {
+              "sec": 1.332144569000036,
+              "share": 0.03815785720428563
+            }
+          }
+        },
+        "humaneval": {
+          "beam.geo50": {
+            "tps_decode": 158.93591925333055,
+            "ttft": 0.03323746800003846,
+            "output_tokens": 1967,
+            "rounds": 301,
+            "decode_time": 12.37605702499991,
+            "mean_accept": 6.554817275747508,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.888133238000023,
+                "sec_per_token": 0.0009599050523640178,
+                "share": 0.15256339189339158
+              },
+              "candidate_build": {
+                "sec": 0.7392967070010172,
+                "sec_per_token": 0.0003758498764621338,
+                "share": 0.05973604561675997
+              },
+              "candidate_pack": {
+                "sec": 0.06142925100027696,
+                "sec_per_token": 3.1229919166383816e-05,
+                "share": 0.004963555910916418
+              },
+              "verify": {
+                "sec": 8.97666952099928,
+                "sec_per_token": 0.004563634733604108,
+                "share": 0.7253254815217972
+              },
+              "walk_accept": {
+                "sec": 0.052792915999475554,
+                "sec_per_token": 2.683930655794385e-05,
+                "share": 0.0042657298599087495
+              },
+              "kv_update": {
+                "sec": 0.41420048500037865,
+                "sec_per_token": 0.00021057472547045177,
+                "share": 0.033467887564163974
+              },
+              "state_carry": {
+                "sec": 0.013796884999692338,
+                "sec_per_token": 7.014176410621423e-06,
+                "share": 0.0011148045756271424
+              },
+              "unaccounted": {
+                "sec": 0.060895216999938384,
+                "sec_per_token": 3.095842247073634e-05,
+                "share": 0.004920405334019446
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.16395698300004824,
+                "sec_per_token": 8.33538296899076e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5111609000002773,
+                "sec_per_token": 0.0002598682765634353
+              },
+              "candidate_build.visibility": {
+                "sec": 0.030937704999928428,
+                "sec_per_token": 1.572837061511359e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1688428049998265,
+              "share": 0.013642697723415488
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 175.05843740259039,
+            "ttft": 0.027737257000012505,
+            "output_tokens": 2040,
+            "rounds": 280,
+            "decode_time": 11.653251510000132,
+            "mean_accept": 7.325,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.7584039299983942,
+                "sec_per_token": 0.0008619627107835266,
+                "share": 0.1508938452490651
+              },
+              "candidate_build": {
+                "sec": 0.7924831769994398,
+                "sec_per_token": 0.0003884721455879607,
+                "share": 0.06800532678106
+              },
+              "candidate_pack": {
+                "sec": 0.05771910000112257,
+                "sec_per_token": 2.8293676471138513e-05,
+                "share": 0.004953046791411946
+              },
+              "verify": {
+                "sec": 8.377381896998259,
+                "sec_per_token": 0.004106559753430519,
+                "share": 0.7188879335359135
+              },
+              "walk_accept": {
+                "sec": 0.04897152800083404,
+                "sec_per_token": 2.4005650980801e-05,
+                "share": 0.004202391749530985
+              },
+              "kv_update": {
+                "sec": 0.3856725600013533,
+                "sec_per_token": 0.00018905517647125163,
+                "share": 0.033095703775928284
+              },
+              "state_carry": {
+                "sec": 0.01285862700024154,
+                "sec_per_token": 6.303248529530167e-06,
+                "share": 0.0011034368381397266
+              },
+              "unaccounted": {
+                "sec": 0.056572558000539175,
+                "sec_per_token": 2.7731646078695673e-05,
+                "share": 0.004854658629138138
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.15248278000046867,
+                "sec_per_token": 7.474646078454346e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5789726399989377,
+                "sec_per_token": 0.0002838101176465381
+              },
+              "candidate_build.visibility": {
+                "sec": 0.029122775999894657,
+                "sec_per_token": 1.4275870588183656e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16318813299994872,
+              "share": 0.014003656649812313
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 186.72415347312528,
+            "ttft": 0.028386655249988735,
+            "output_tokens": 2033,
+            "rounds": 255,
+            "decode_time": 10.887718392000124,
+            "mean_accept": 8.03921568627451,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6066671690001613,
+                "sec_per_token": 0.0007902937378259524,
+                "share": 0.14756692919066297
+              },
+              "candidate_build": {
+                "sec": 0.9199268679993793,
+                "sec_per_token": 0.00045249722970948315,
+                "share": 0.08449216216643755
+              },
+              "candidate_pack": {
+                "sec": 0.05244711599993934,
+                "sec_per_token": 2.5797892769276607e-05,
+                "share": 0.0048170896887336345
+              },
+              "verify": {
+                "sec": 7.678733229999693,
+                "sec_per_token": 0.003777045366453366,
+                "share": 0.705265598680595
+              },
+              "walk_accept": {
+                "sec": 0.04462044599881665,
+                "sec_per_token": 2.194807968461222e-05,
+                "share": 0.0040982365994699154
+              },
+              "kv_update": {
+                "sec": 0.3542993099990781,
+                "sec_per_token": 0.00017427413182443587,
+                "share": 0.032541189737181626
+              },
+              "state_carry": {
+                "sec": 0.011816387999147082,
+                "sec_per_token": 5.8122911948583775e-06,
+                "share": 0.0010852951530992304
+              },
+              "unaccounted": {
+                "sec": 0.051808885003993055,
+                "sec_per_token": 2.548395720806348e-05,
+                "share": 0.004758470336821002
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.13833566399955544,
+                "sec_per_token": 6.804508804700219e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.7243144219999067,
+                "sec_per_token": 0.0003562786138710805
+              },
+              "candidate_build.visibility": {
+                "sec": 0.02684823399954439,
+                "sec_per_token": 1.3206214461163006e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16739897999991626,
+              "share": 0.015375028446999013
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 199.72516798678367,
+            "ttft": 0.029032489749994284,
+            "output_tokens": 1989,
+            "rounds": 231,
+            "decode_time": 9.958684826999956,
+            "mean_accept": 8.636363636363637,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.4429937749990813,
+                "sec_per_token": 0.0007254870663645456,
+                "share": 0.14489802620189776
+              },
+              "candidate_build": {
+                "sec": 1.0037415659991211,
+                "sec_per_token": 0.0005046463378577783,
+                "share": 0.10079057460255997
+              },
+              "candidate_pack": {
+                "sec": 0.046727467000323486,
+                "sec_per_token": 2.3492944695989687e-05,
+                "share": 0.004692132325910758
+              },
+              "verify": {
+                "sec": 6.876595574001726,
+                "sec_per_token": 0.0034573130085478764,
+                "share": 0.690512421415117
+              },
+              "walk_accept": {
+                "sec": 0.040685609000661316,
+                "sec_per_token": 2.0455308698170595e-05,
+                "share": 0.0040854399659636395
+              },
+              "kv_update": {
+                "sec": 0.31542689800141943,
+                "sec_per_token": 0.00015858567018673677,
+                "share": 0.03167354961834267
+              },
+              "state_carry": {
+                "sec": 0.010668316999954186,
+                "sec_per_token": 5.363658622400294e-06,
+                "share": 0.0010712576193826595
+              },
+              "unaccounted": {
+                "sec": 0.04696185599777891,
+                "sec_per_token": 2.3610787329200055e-05,
+                "share": 0.004715668465624705
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.125112118000402,
+                "sec_per_token": 6.290202011081047e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.8254055049999351,
+                "sec_per_token": 0.00041498517094013833
+              },
+              "candidate_build.visibility": {
+                "sec": 0.02474209599927235,
+                "sec_per_token": 1.2439465057452162e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17488376499989045,
+              "share": 0.017560929785200765
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 163.9754915189862,
+            "ttft": 0.02850089800003275,
+            "output_tokens": 2016,
+            "rounds": 292,
+            "decode_time": 12.294520243999841,
+            "mean_accept": 6.924657534246576,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.8311652550004283,
+                "sec_per_token": 0.0009083160987105299,
+                "share": 0.14894157874066713
+              },
+              "candidate_build": {
+                "sec": 1.0177430859981769,
+                "sec_per_token": 0.0005048328799594132,
+                "share": 0.08278021962629012
+              },
+              "candidate_pack": {
+                "sec": 0.060345091999806755,
+                "sec_per_token": 2.9933081349110492e-05,
+                "share": 0.004908291726898191
+              },
+              "verify": {
+                "sec": 8.691686113999936,
+                "sec_per_token": 0.00431135223908727,
+                "share": 0.7069561025158168
+              },
+              "walk_accept": {
+                "sec": 0.050595001000033335,
+                "sec_per_token": 2.509672668652447e-05,
+                "share": 0.004115248093940508
+              },
+              "kv_update": {
+                "sec": 0.40183147099889993,
+                "sec_per_token": 0.00019932116617008924,
+                "share": 0.03268378619287791
+              },
+              "state_carry": {
+                "sec": 0.013418730001490076,
+                "sec_per_token": 6.656116072167696e-06,
+                "share": 0.0010914399045411217
+              },
+              "unaccounted": {
+                "sec": 0.05887414000108038,
+                "sec_per_token": 2.920344246085336e-05,
+                "share": 0.004788648831564862
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.15864513800056557,
+                "sec_per_token": 7.869302480186784e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.7928731480002398,
+                "sec_per_token": 0.00039329025198424594
+              },
+              "candidate_build.visibility": {
+                "sec": 0.030784657999106457,
+                "sec_per_token": 1.5270167658286933e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16886135499999,
+              "share": 0.01373468436740346
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 151.91997891406288,
+            "ttft": 0.028774446249968832,
+            "output_tokens": 2033,
+            "rounds": 320,
+            "decode_time": 13.382045038000001,
+            "mean_accept": 6.36875,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.051840775999949,
+                "sec_per_token": 0.0010092674746679533,
+                "share": 0.15332789347020495
+              },
+              "candidate_build": {
+                "sec": 0.7780425340016563,
+                "sec_per_token": 0.0003827066079693342,
+                "share": 0.058140779812973775
+              },
+              "candidate_pack": {
+                "sec": 0.06698025300011068,
+                "sec_per_token": 3.294650909990688e-05,
+                "share": 0.0050052329677498335
+              },
+              "verify": {
+                "sec": 9.731339227999683,
+                "sec_per_token": 0.0047866892415148465,
+                "share": 0.7271937286391071
+              },
+              "walk_accept": {
+                "sec": 0.05636746400080028,
+                "sec_per_token": 2.7726248893654837e-05,
+                "share": 0.004212171147290102
+              },
+              "kv_update": {
+                "sec": 0.45031234399948517,
+                "sec_per_token": 0.00022150139891760214,
+                "share": 0.03365048785299755
+              },
+              "state_carry": {
+                "sec": 0.015036107000469201,
+                "sec_per_token": 7.396019183703493e-06,
+                "share": 0.0011236030784362392
+              },
+              "unaccounted": {
+                "sec": 0.06555617699780214,
+                "sec_per_token": 3.224602902006992e-05,
+                "share": 0.004898816048791281
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.17494792399975267,
+                "sec_per_token": 8.605406984739433e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5326196669993806,
+                "sec_per_token": 0.0002619870472205512
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03392136199931883,
+                "sec_per_token": 1.66853723557889e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1665701550000449,
+              "share": 0.012447286982449094
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 174.28456020084218,
+            "ttft": 0.029512162999992597,
+            "output_tokens": 1982,
+            "rounds": 268,
+            "decode_time": 11.372206452,
+            "mean_accept": 7.414179104477612,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.715240090000293,
+                "sec_per_token": 0.0008654087235117523,
+                "share": 0.150827378771218
+              },
+              "candidate_build": {
+                "sec": 0.756870381001022,
+                "sec_per_token": 0.00038187203885016246,
+                "share": 0.06655440034399948
+              },
+              "candidate_pack": {
+                "sec": 0.05462045100034629,
+                "sec_per_token": 2.7558249747904286e-05,
+                "share": 0.004802977437218468
+              },
+              "verify": {
+                "sec": 8.177795624000737,
+                "sec_per_token": 0.004126032100908545,
+                "share": 0.7191036900814027
+              },
+              "walk_accept": {
+                "sec": 0.04715633899968452,
+                "sec_per_token": 2.3792300201657175e-05,
+                "share": 0.00414663057681223
+              },
+              "kv_update": {
+                "sec": 0.38299820200006707,
+                "sec_per_token": 0.0001932382452068956,
+                "share": 0.0336784425798663
+              },
+              "state_carry": {
+                "sec": 0.012308340000799944,
+                "sec_per_token": 6.210060545307742e-06,
+                "share": 0.001082317670959562
+              },
+              "unaccounted": {
+                "sec": 0.05499053499704587,
+                "sec_per_token": 2.7744972248761792e-05,
+                "share": 0.00483552028616002
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14602256900025168,
+                "sec_per_token": 7.367435368327532e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5528088489988932,
+                "sec_per_token": 0.0002789146564071106
+              },
+              "candidate_build.visibility": {
+                "sec": 0.027909019000503577,
+                "sec_per_token": 1.4081240666248021e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17022649000000456,
+              "share": 0.014968642252363197
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 120.61667451690553,
+            "ttft": 0.02859435100000951,
+            "output_tokens": 2016,
+            "rounds": 414,
+            "decode_time": 16.71410696800001,
+            "mean_accept": 4.869565217391305,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.5876386670004194,
+                "sec_per_token": 0.0012835509260914779,
+                "share": 0.15481764427824846
+              },
+              "candidate_build": {
+                "sec": 0.7866943240004503,
+                "sec_per_token": 0.0003902253591272075,
+                "share": 0.04706768513008895
+              },
+              "candidate_pack": {
+                "sec": 0.08519486400041387,
+                "sec_per_token": 4.2259357143062435e-05,
+                "share": 0.0050971831258184285
+              },
+              "verify": {
+                "sec": 12.350415306001196,
+                "sec_per_token": 0.006126198068452974,
+                "share": 0.7389216384486877
+              },
+              "walk_accept": {
+                "sec": 0.07231018100105757,
+                "sec_per_token": 3.5868145337826175e-05,
+                "share": 0.0043262964117376426
+              },
+              "kv_update": {
+                "sec": 0.5655256279975447,
+                "sec_per_token": 0.00028051866468132176,
+                "share": 0.03383522847378395
+              },
+              "state_carry": {
+                "sec": 0.018891873001052772,
+                "sec_per_token": 9.370968750522208e-06,
+                "share": 0.0011302950876898301
+              },
+              "unaccounted": {
+                "sec": 0.08389490999786631,
+                "sec_per_token": 4.161453868941781e-05,
+                "share": 0.005019407268272681
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.22662575199979074,
+                "sec_per_token": 0.00011241356746021366
+              },
+              "candidate_build.expand": {
+                "sec": 0.47291280900014954,
+                "sec_per_token": 0.0002345797663691218
+              },
+              "candidate_build.visibility": {
+                "sec": 0.04244997600210354,
+                "sec_per_token": 2.1056535715329136e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1635412150000093,
+              "share": 0.009784621775672317
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 27.936966465198864,
+            "ttft": 0.028822919500015587,
+            "output_tokens": 1994,
+            "rounds": 225,
+            "decode_time": 71.374964869,
+            "mean_accept": 8.924444444444445,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.5067873760015118,
+                "sec_per_token": 0.0007556606700107883,
+                "share": 0.021110866797161097
+              },
+              "candidate_build": {
+                "sec": 60.83177108999962,
+                "sec_per_token": 0.030507407768304726,
+                "share": 0.8522844277632764
+              },
+              "candidate_pack": {
+                "sec": 0.0968026970003848,
+                "sec_per_token": 4.8546989468598194e-05,
+                "share": 0.0013562556167705901
+              },
+              "verify": {
+                "sec": 7.194322314999113,
+                "sec_per_token": 0.0036079851128380707,
+                "share": 0.10079615910429392
+              },
+              "walk_accept": {
+                "sec": 0.05184161399995446,
+                "sec_per_token": 2.5998803410207855e-05,
+                "share": 0.0007263276990062748
+              },
+              "kv_update": {
+                "sec": 0.3190638570001738,
+                "sec_per_token": 0.0001600119643932667,
+                "share": 0.0044702488832852865
+              },
+              "state_carry": {
+                "sec": 0.011860601999501341,
+                "sec_per_token": 5.9481454360588475e-06,
+                "share": 0.00016617313957730168
+              },
+              "unaccounted": {
+                "sec": 0.055048604999797135,
+                "sec_per_token": 2.7607123871513106e-05,
+                "share": 0.0007712592937990527
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 27.754589699999656,
+                "sec_per_token": 0.013919052006017882
+              },
+              "candidate_build.expand": {
+                "sec": 32.72118019199797,
+                "sec_per_token": 0.016409819554662974
+              },
+              "candidate_build.visibility": {
+                "sec": 0.01848058099892569,
+                "sec_per_token": 9.268094783814288e-06
+              }
+            },
+            "cold_round": {
+              "sec": 1.3074667129999398,
+              "share": 0.018318281702830043
+            }
+          }
+        },
+        "mt-bench": {
+          "beam.geo50": {
+            "tps_decode": 92.08072451702547,
+            "ttft": 0.029026553250048437,
+            "output_tokens": 1121,
+            "rounds": 300,
+            "decode_time": 12.174100560999932,
+            "mean_accept": 3.75,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.8608163830006106,
+                "sec_per_token": 0.001659961090990732,
+                "share": 0.15285041992849865
+              },
+              "candidate_build": {
+                "sec": 0.7363017320003564,
+                "sec_per_token": 0.0006568258090993367,
+                "share": 0.06048099638334838
+              },
+              "candidate_pack": {
+                "sec": 0.06035729800032641,
+                "sec_per_token": 5.3842371097525787e-05,
+                "share": 0.004957844540374727
+              },
+              "verify": {
+                "sec": 8.819709433002572,
+                "sec_per_token": 0.00786771581891398,
+                "share": 0.7244649728996617
+              },
+              "walk_accept": {
+                "sec": 0.05058959000120922,
+                "sec_per_token": 4.512898305192615e-05,
+                "share": 0.004155509456137923
+              },
+              "kv_update": {
+                "sec": 0.4089878859997498,
+                "sec_per_token": 0.0003648420035680194,
+                "share": 0.03359491602278642
+              },
+              "state_carry": {
+                "sec": 0.013377751001598881,
+                "sec_per_token": 1.1933765389472686e-05,
+                "share": 0.0010988697632788476
+              },
+              "unaccounted": {
+                "sec": 0.05956773399338999,
+                "sec_per_token": 5.313803210828724e-05,
+                "share": 0.004892988495940051
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.16195327499599443,
+                "sec_per_token": 0.00014447214540231438
+              },
+              "candidate_build.expand": {
+                "sec": 0.511430399001938,
+                "sec_per_token": 0.0004562269393416039
+              },
+              "candidate_build.visibility": {
+                "sec": 0.030301135001309376,
+                "sec_per_token": 2.7030450491801405e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16439275400011866,
+              "share": 0.013503482509973295
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 93.31027065032643,
+            "ttft": 0.029053274749912816,
+            "output_tokens": 1228,
+            "rounds": 318,
+            "decode_time": 13.16039479300025,
+            "mean_accept": 3.893081761006289,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.00188889699848,
+                "sec_per_token": 0.0016302026848521824,
+                "share": 0.15211465373844593
+              },
+              "candidate_build": {
+                "sec": 0.8906930940001985,
+                "sec_per_token": 0.0007253201091206828,
+                "share": 0.06767981569017521
+              },
+              "candidate_pack": {
+                "sec": 0.06471013399777803,
+                "sec_per_token": 5.269554885812543e-05,
+                "share": 0.004917035926019183
+              },
+              "verify": {
+                "sec": 9.460943201999044,
+                "sec_per_token": 0.007704351141693032,
+                "share": 0.7188950902165282
+              },
+              "walk_accept": {
+                "sec": 0.05492707100006555,
+                "sec_per_token": 4.472888517920647e-05,
+                "share": 0.004173664381959131
+              },
+              "kv_update": {
+                "sec": 0.44108604800203466,
+                "sec_per_token": 0.0003591905928355331,
+                "share": 0.0335161714325348
+              },
+              "state_carry": {
+                "sec": 0.014398507004671046,
+                "sec_per_token": 1.1725168570579028e-05,
+                "share": 0.0010940786527414302
+              },
+              "unaccounted": {
+                "sec": 0.0640972459978002,
+                "sec_per_token": 5.219645439560277e-05,
+                "share": 0.0048704652866411145
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.17153653899890742,
+                "sec_per_token": 0.00013968773534112983
+              },
+              "candidate_build.expand": {
+                "sec": 0.6501406040008533,
+                "sec_per_token": 0.0005294304592840825
+              },
+              "candidate_build.visibility": {
+                "sec": 0.033095851000780385,
+                "sec_per_token": 2.6951018730277186e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1676505940001789,
+              "share": 0.012739024674954955
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 93.1355470225153,
+            "ttft": 0.029412161250036206,
+            "output_tokens": 1117,
+            "rounds": 288,
+            "decode_time": 11.993272554999521,
+            "mean_accept": 3.888888888888889,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.794342898999048,
+                "sec_per_token": 0.0016063947170985211,
+                "share": 0.14961245071104945
+              },
+              "candidate_build": {
+                "sec": 1.011440140000559,
+                "sec_per_token": 0.0009054969919432041,
+                "share": 0.08433395767187243
+              },
+              "candidate_pack": {
+                "sec": 0.06031316499888817,
+                "sec_per_token": 5.399567144036542e-05,
+                "share": 0.005028916396446439
+              },
+              "verify": {
+                "sec": 8.440763672001367,
+                "sec_per_token": 0.00755663712802271,
+                "share": 0.703791532569044
+              },
+              "walk_accept": {
+                "sec": 0.049601990000610385,
+                "sec_per_token": 4.4406436885058534e-05,
+                "share": 0.004135817790610727
+              },
+              "kv_update": {
+                "sec": 0.393088430999569,
+                "sec_per_token": 0.000351914441360402,
+                "share": 0.03277574400122392
+              },
+              "state_carry": {
+                "sec": 0.01299893800000973,
+                "sec_per_token": 1.1637366159364126e-05,
+                "share": 0.001083852463153686
+              },
+              "unaccounted": {
+                "sec": 0.05848329699961141,
+                "sec_per_token": 5.235747269437011e-05,
+                "share": 0.004876341860106568
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.15554519800207345,
+                "sec_per_token": 0.00013925263921403172
+              },
+              "candidate_build.expand": {
+                "sec": 0.7904150609974749,
+                "sec_per_token": 0.0007076231521911145
+              },
+              "candidate_build.visibility": {
+                "sec": 0.030566542999395097,
+                "sec_per_token": 2.7364854968124527e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1722400229998584,
+              "share": 0.014361386536492774
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 78.75661724979538,
+            "ttft": 0.029097239999998692,
+            "output_tokens": 1102,
+            "rounds": 318,
+            "decode_time": 13.992475025999966,
+            "mean_accept": 3.4748427672955975,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.041454984000211,
+                "sec_per_token": 0.0018524999854811351,
+                "share": 0.14589663231178926
+              },
+              "candidate_build": {
+                "sec": 1.4300381070004278,
+                "sec_per_token": 0.0012976752332127294,
+                "share": 0.10220051165667389
+              },
+              "candidate_pack": {
+                "sec": 0.06501624700354114,
+                "sec_per_token": 5.899840925911174e-05,
+                "share": 0.0046465151363666475
+              },
+              "verify": {
+                "sec": 9.687916626002561,
+                "sec_per_token": 0.008791212909258222,
+                "share": 0.69236619025591
+              },
+              "walk_accept": {
+                "sec": 0.05521976199952405,
+                "sec_per_token": 5.010867695056629e-05,
+                "share": 0.003946389891489393
+              },
+              "kv_update": {
+                "sec": 0.4556486820001737,
+                "sec_per_token": 0.0004134743030854571,
+                "share": 0.03256383743072724
+              },
+              "state_carry": {
+                "sec": 0.014644738001379665,
+                "sec_per_token": 1.3289235935916211e-05,
+                "share": 0.0010466152681471795
+              },
+              "unaccounted": {
+                "sec": 0.06488944399211505,
+                "sec_per_token": 5.8883343005549045e-05,
+                "share": 0.004637452907476442
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.17188740900110133,
+                "sec_per_token": 0.00015597768511896673
+              },
+              "candidate_build.expand": {
+                "sec": 1.1855025150018719,
+                "sec_per_token": 0.0010757736070797386
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03355534000024818,
+                "sec_per_token": 3.044949183325606e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17764643600003183,
+              "share": 0.012695855141419944
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 63.029194350587346,
+            "ttft": 0.02797794775000284,
+            "output_tokens": 1107,
+            "rounds": 414,
+            "decode_time": 17.56328970100003,
+            "mean_accept": 2.7004830917874396,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.6237769769988972,
+                "sec_per_token": 0.002370168904244713,
+                "share": 0.14938983650935866
+              },
+              "candidate_build": {
+                "sec": 1.4482086360007997,
+                "sec_per_token": 0.0013082282168028906,
+                "share": 0.0824565705317917
+              },
+              "candidate_pack": {
+                "sec": 0.08517867800105705,
+                "sec_per_token": 7.694550858270736e-05,
+                "share": 0.0048498134148642486
+              },
+              "verify": {
+                "sec": 12.48401031800131,
+                "sec_per_token": 0.011277335427282122,
+                "share": 0.7108013664029289
+              },
+              "walk_accept": {
+                "sec": 0.07136161500193339,
+                "sec_per_token": 6.44639701914484e-05,
+                "share": 0.004063112105807271
+              },
+              "kv_update": {
+                "sec": 0.5824958800008062,
+                "sec_per_token": 0.0005261932068661302,
+                "share": 0.03316553390152414
+              },
+              "state_carry": {
+                "sec": 0.018926462998933857,
+                "sec_per_token": 1.7097075879795715e-05,
+                "share": 0.0010776149184543833
+              },
+              "unaccounted": {
+                "sec": 0.08343024899613738,
+                "sec_per_token": 7.536607858729663e-05,
+                "share": 0.004750263214720359
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.22429742200165492,
+                "sec_per_token": 0.00020261736404846877
+              },
+              "candidate_build.expand": {
+                "sec": 1.131043364998959,
+                "sec_per_token": 0.0010217193902429622
+              },
+              "candidate_build.visibility": {
+                "sec": 0.0428827990008358,
+                "sec_per_token": 3.873784914257977e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16590088500015554,
+              "share": 0.009445889000550356
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 74.2096318089304,
+            "ttft": 0.027753164999978708,
+            "output_tokens": 1115,
+            "rounds": 373,
+            "decode_time": 15.025003801000139,
+            "mean_accept": 3.0107238605898123,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.3260649970027316,
+                "sec_per_token": 0.0020861569479845125,
+                "share": 0.15481293900557264
+              },
+              "candidate_build": {
+                "sec": 0.8671526650011856,
+                "sec_per_token": 0.0007777153946198974,
+                "share": 0.057713973086879596
+              },
+              "candidate_pack": {
+                "sec": 0.07634987599817578,
+                "sec_per_token": 6.847522511047155e-05,
+                "share": 0.005081521243481719
+              },
+              "verify": {
+                "sec": 10.931227814001431,
+                "sec_per_token": 0.009803791761436262,
+                "share": 0.7275357769476101
+              },
+              "walk_accept": {
+                "sec": 0.06388542099807637,
+                "sec_per_token": 5.729634170231065e-05,
+                "share": 0.004251940421727137
+              },
+              "kv_update": {
+                "sec": 0.506811101997755,
+                "sec_per_token": 0.000454539104930722,
+                "share": 0.033731179619669656
+              },
+              "state_carry": {
+                "sec": 0.017065234998426604,
+                "sec_per_token": 1.530514349634673e-05,
+                "share": 0.0011357890636467364
+              },
+              "unaccounted": {
+                "sec": 0.07510697600241656,
+                "sec_per_token": 6.736051659409556e-05,
+                "share": 0.004998799134907178
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.20216673599793467,
+                "sec_per_token": 0.00018131545829411182
+              },
+              "candidate_build.expand": {
+                "sec": 0.5854747230011981,
+                "sec_per_token": 0.000525089437669236
+              },
+              "candidate_build.visibility": {
+                "sec": 0.037752083998157104,
+                "sec_per_token": 3.385837129879561e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16133971499994004,
+              "share": 0.010738081476505216
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 92.55506082575843,
+            "ttft": 0.02751660724999283,
+            "output_tokens": 1178,
+            "rounds": 311,
+            "decode_time": 12.727559028000314,
+            "mean_accept": 3.8038585209003215,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.9346360709982946,
+                "sec_per_token": 0.0016423056629866677,
+                "share": 0.15200370053221857
+              },
+              "candidate_build": {
+                "sec": 0.8427540929999395,
+                "sec_per_token": 0.0007154109448216804,
+                "share": 0.06621490351338394
+              },
+              "candidate_pack": {
+                "sec": 0.062322343000005276,
+                "sec_per_token": 5.290521477080244e-05,
+                "share": 0.004896645371111434
+              },
+              "verify": {
+                "sec": 9.170198900998457,
+                "sec_per_token": 0.007784549151951152,
+                "share": 0.7204994202599452
+              },
+              "walk_accept": {
+                "sec": 0.05338898799982417,
+                "sec_per_token": 4.532172156182018e-05,
+                "share": 0.004194754695882354
+              },
+              "kv_update": {
+                "sec": 0.42880636099789626,
+                "sec_per_token": 0.00036401219099991194,
+                "share": 0.03369117047931445
+              },
+              "state_carry": {
+                "sec": 0.013886855997270686,
+                "sec_per_token": 1.17885025443724e-05,
+                "share": 0.0010910855700389955
+              },
+              "unaccounted": {
+                "sec": 0.06193441300865743,
+                "sec_per_token": 5.257590238425928e-05,
+                "share": 0.004866165843144255
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.16757085399945026,
+                "sec_per_token": 0.0001422503005088712
+              },
+              "candidate_build.expand": {
+                "sec": 0.6093980990015098,
+                "sec_per_token": 0.0005173158735157128
+              },
+              "candidate_build.visibility": {
+                "sec": 0.031351144000609565,
+                "sec_per_token": 2.6613874363845132e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.15963100199996916,
+              "share": 0.012542153734960875
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 92.00229324113458,
+            "ttft": 0.028207306749948202,
+            "output_tokens": 1192,
+            "rounds": 324,
+            "decode_time": 12.956198785999959,
+            "mean_accept": 3.682098765432099,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.0161039549982434,
+                "sec_per_token": 0.001691362378354231,
+                "share": 0.15560921751036877
+              },
+              "candidate_build": {
+                "sec": 0.6098179589976098,
+                "sec_per_token": 0.0005115922474812162,
+                "share": 0.04706765997265795
+              },
+              "candidate_pack": {
+                "sec": 0.06496534100165263,
+                "sec_per_token": 5.450112500138644e-05,
+                "share": 0.005014228484349286
+              },
+              "verify": {
+                "sec": 9.525471481998693,
+                "sec_per_token": 0.007991167350670044,
+                "share": 0.735205721935326
+              },
+              "walk_accept": {
+                "sec": 0.055921642998328025,
+                "sec_per_token": 4.691413003215438e-05,
+                "share": 0.004316207548370986
+              },
+              "kv_update": {
+                "sec": 0.4449934790006864,
+                "sec_per_token": 0.0003733166770139987,
+                "share": 0.03434599039044783
+              },
+              "state_carry": {
+                "sec": 0.014751501000318967,
+                "sec_per_token": 1.2375420302281014e-05,
+                "share": 0.001138567047632748
+              },
+              "unaccounted": {
+                "sec": 0.06529581100448922,
+                "sec_per_token": 5.4778364936652034e-05,
+                "share": 0.005039735194171745
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.1745425259998683,
+                "sec_per_token": 0.0001464282936240506
+              },
+              "candidate_build.expand": {
+                "sec": 0.368476038001063,
+                "sec_per_token": 0.0003091241929539119
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03256575699970199,
+                "sec_per_token": 2.7320265939347305e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.15887761499993758,
+              "share": 0.01226267191667478
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 12.56381084744166,
+            "ttft": 0.028755189249977775,
+            "output_tokens": 1130,
+            "rounds": 284,
+            "decode_time": 89.94086378099996,
+            "mean_accept": 4.003521126760563,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.9224913269990793,
+                "sec_per_token": 0.0017013197584062648,
+                "share": 0.021375059635631456
+              },
+              "candidate_build": {
+                "sec": 76.91665927700092,
+                "sec_per_token": 0.0680678400681424,
+                "share": 0.8551914674100516
+              },
+              "candidate_pack": {
+                "sec": 0.12545260199931363,
+                "sec_per_token": 0.0001110200017693041,
+                "share": 0.001394834302512175
+              },
+              "verify": {
+                "sec": 9.149550348000503,
+                "sec_per_token": 0.008096947210619914,
+                "share": 0.10172851319594896
+              },
+              "walk_accept": {
+                "sec": 0.06590411000161112,
+                "sec_per_token": 5.832222124036382e-05,
+                "share": 0.0007327493558665753
+              },
+              "kv_update": {
+                "sec": 0.40824714900350045,
+                "sec_per_token": 0.00036128066283495615,
+                "share": 0.004539061910696735
+              },
+              "state_carry": {
+                "sec": 0.015148623000413863,
+                "sec_per_token": 1.3405861062313153e-05,
+                "share": 0.00016842870263398578
+              },
+              "unaccounted": {
+                "sec": 0.07100285999490552,
+                "sec_per_token": 6.283438937602258e-05,
+                "share": 0.0007894393828348455
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 35.658665639000674,
+                "sec_per_token": 0.03155634127345192
+              },
+              "candidate_build.expand": {
+                "sec": 40.792668984998954,
+                "sec_per_token": 0.03609970706637076
+              },
+              "candidate_build.visibility": {
+                "sec": 0.02363758800083815,
+                "sec_per_token": 2.0918219469768275e-05
+              }
+            },
+            "cold_round": {
+              "sec": 1.2664074849997178,
+              "share": 0.014080446103823686
+            }
+          }
+        }
+      },
+      "256": {
+        "gsm8k": {
+          "beam.geo50": {
+            "tps_decode": 203.2885418202345,
+            "ttft": 0.02784281174999137,
+            "output_tokens": 1285,
+            "rounds": 152,
+            "decode_time": 6.32106457399999,
+            "mean_accept": 8.480263157894736,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.9309672149993844,
+                "sec_per_token": 0.0007244881050578867,
+                "share": 0.14728013044332267
+              },
+              "candidate_build": {
+                "sec": 0.46826916099951177,
+                "sec_per_token": 0.0003644117984431998,
+                "share": 0.0740807431276073
+              },
+              "candidate_pack": {
+                "sec": 0.03261778099982848,
+                "sec_per_token": 2.5383487159399596e-05,
+                "share": 0.0051601720909469915
+              },
+              "verify": {
+                "sec": 4.447753672000488,
+                "sec_per_token": 0.003461286904280535,
+                "share": 0.7036399675926637
+              },
+              "walk_accept": {
+                "sec": 0.03105001200009383,
+                "sec_per_token": 2.4163433463108037e-05,
+                "share": 0.004912149154085493
+              },
+              "kv_update": {
+                "sec": 0.20684026899971286,
+                "sec_per_token": 0.00016096518988304503,
+                "share": 0.03272237873514139
+              },
+              "state_carry": {
+                "sec": 0.006858472000033089,
+                "sec_per_token": 5.3373322957455945e-06,
+                "share": 0.0010850184996121666
+              },
+              "unaccounted": {
+                "sec": 0.03094323300092583,
+                "sec_per_token": 2.4080336965701036e-05,
+                "share": 0.004895256588297254
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.0819455929993751,
+                "sec_per_token": 6.377088949367711e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.3214025119995654,
+                "sec_per_token": 0.00025011868638098473
+              },
+              "candidate_build.visibility": {
+                "sec": 0.04603646599980493,
+                "sec_per_token": 3.5826043579614735e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16576475900001242,
+              "share": 0.026224183768323053
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 225.3281608289984,
+            "ttft": 0.028261137999990638,
+            "output_tokens": 1298,
+            "rounds": 132,
+            "decode_time": 5.76048726099998,
+            "mean_accept": 9.863636363636363,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.8316292330005695,
+                "sec_per_token": 0.0006407004876737823,
+                "share": 0.14436786252977574
+              },
+              "candidate_build": {
+                "sec": 0.5049679449999758,
+                "sec_per_token": 0.000389035396764234,
+                "share": 0.08766063045026452
+              },
+              "candidate_pack": {
+                "sec": 0.029337348999774804,
+                "sec_per_token": 2.2601963790273348e-05,
+                "share": 0.005092858931985911
+              },
+              "verify": {
+                "sec": 3.97552289199956,
+                "sec_per_token": 0.0030628065423725427,
+                "share": 0.6901365651678287
+              },
+              "walk_accept": {
+                "sec": 0.028254680001111865,
+                "sec_per_token": 2.1767858244308063e-05,
+                "share": 0.004904911463376286
+              },
+              "kv_update": {
+                "sec": 0.18728377600035628,
+                "sec_per_token": 0.000144286422188256,
+                "share": 0.03251179414427611
+              },
+              "state_carry": {
+                "sec": 0.006205892000480162,
+                "sec_per_token": 4.781118644437721e-06,
+                "share": 0.0010773206708563857
+              },
+              "unaccounted": {
+                "sec": 0.027975323998248314,
+                "sec_per_token": 2.1552637903118887e-05,
+                "share": 0.004856416259723139
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.07112221900001714,
+                "sec_per_token": 5.479369722651552e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.37435489899979757,
+                "sec_per_token": 0.00028840901309691645
+              },
+              "candidate_build.visibility": {
+                "sec": 0.041995143000349344,
+                "sec_per_token": 3.235373112507654e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16931016999990334,
+              "share": 0.029391640381913157
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 243.22816241082452,
+            "ttft": 0.029754242249993013,
+            "output_tokens": 1293,
+            "rounds": 116,
+            "decode_time": 5.315996252999923,
+            "mean_accept": 11.181034482758621,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.7409611069997482,
+                "sec_per_token": 0.0005730557672078485,
+                "share": 0.13938330121689024
+              },
+              "candidate_build": {
+                "sec": 0.5641668360001972,
+                "sec_per_token": 0.0004363239257542129,
+                "share": 0.10612626667707423
+              },
+              "candidate_pack": {
+                "sec": 0.028421707999825685,
+                "sec_per_token": 2.1981212683546547e-05,
+                "share": 0.005346449968580536
+              },
+              "verify": {
+                "sec": 3.5792694390000293,
+                "sec_per_token": 0.0027681898213457305,
+                "share": 0.6733017234502706
+              },
+              "walk_accept": {
+                "sec": 0.023969129999841243,
+                "sec_per_token": 1.8537610208693923e-05,
+                "share": 0.004508868866548764
+              },
+              "kv_update": {
+                "sec": 0.16707239500010473,
+                "sec_per_token": 0.00012921298917254812,
+                "share": 0.03142823791604865
+              },
+              "state_carry": {
+                "sec": 0.0054178589997491144,
+                "sec_per_token": 4.190146171499702e-06,
+                "share": 0.001019161553526624
+              },
+              "unaccounted": {
+                "sec": 0.024272854000457755,
+                "sec_per_token": 1.8772508894398883e-05,
+                "share": 0.0045660028422255
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.06217930400021032,
+                "sec_per_token": 4.808917556087419e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.45051278200020306,
+                "sec_per_token": 0.00034842442536751975
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03577255199979845,
+                "sec_per_token": 2.7666320185458973e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.18244492499997023,
+              "share": 0.034319987508834846
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 266.66141639053166,
+            "ttft": 0.029554985500027442,
+            "output_tokens": 1297,
+            "rounds": 109,
+            "decode_time": 4.863845761999983,
+            "mean_accept": 11.926605504587156,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.6827670589997865,
+                "sec_per_token": 0.0005264202459520328,
+                "share": 0.14037596840222108
+              },
+              "candidate_build": {
+                "sec": 0.5246792959998743,
+                "sec_per_token": 0.00040453299614485295,
+                "share": 0.10787334172869197
+              },
+              "candidate_pack": {
+                "sec": 0.02355830900063438,
+                "sec_per_token": 1.8163692367489884e-05,
+                "share": 0.004843555933596742
+              },
+              "verify": {
+                "sec": 3.2477953409996303,
+                "sec_per_token": 0.002504082760986608,
+                "share": 0.667742255803802
+              },
+              "walk_accept": {
+                "sec": 0.02262112900041302,
+                "sec_per_token": 1.744111719384196e-05,
+                "share": 0.0046508730143431515
+              },
+              "kv_update": {
+                "sec": 0.1532853449998015,
+                "sec_per_token": 0.00011818453739383308,
+                "share": 0.03151525613689928
+              },
+              "state_carry": {
+                "sec": 0.005109038999989934,
+                "sec_per_token": 3.9391202775558475e-06,
+                "share": 0.0010504113925457065
+              },
+              "unaccounted": {
+                "sec": 0.022820044999889433,
+                "sec_per_token": 1.7594483423199256e-05,
+                "share": 0.0046917698702900424
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.058153547000017625,
+                "sec_per_token": 4.4836967617592614e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.41804985999976907,
+                "sec_per_token": 0.00032232063222804093
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03335200299994767,
+                "sec_per_token": 2.5714728604431513e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.18121019899996327,
+              "share": 0.0372565677176101
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 254.60696947920735,
+            "ttft": 0.028383056750016067,
+            "output_tokens": 1259,
+            "rounds": 112,
+            "decode_time": 4.944876421000004,
+            "mean_accept": 11.276785714285714,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.6920391680001217,
+                "sec_per_token": 0.0005496736838761887,
+                "share": 0.13995075085418826
+              },
+              "candidate_build": {
+                "sec": 0.5083483540001907,
+                "sec_per_token": 0.00040377152819713326,
+                "share": 0.10280304515626042
+              },
+              "candidate_pack": {
+                "sec": 0.026797122999198564,
+                "sec_per_token": 2.1284450356789965e-05,
+                "share": 0.005419169402372926
+              },
+              "verify": {
+                "sec": 3.338141765999808,
+                "sec_per_token": 0.0026514231660046132,
+                "share": 0.6750708171033999
+              },
+              "walk_accept": {
+                "sec": 0.022865385999750742,
+                "sec_per_token": 1.8161545670969613e-05,
+                "share": 0.00462405610434379
+              },
+              "kv_update": {
+                "sec": 0.1535485459991719,
+                "sec_per_token": 0.00012196071961808729,
+                "share": 0.031052049217464513
+              },
+              "state_carry": {
+                "sec": 0.005097630000079789,
+                "sec_per_token": 4.048951548911667e-06,
+                "share": 0.0010308912834365422
+              },
+              "unaccounted": {
+                "sec": 0.023089538001727306,
+                "sec_per_token": 1.8339585386598338e-05,
+                "share": 0.00466938625678696
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.05992439500016644,
+                "sec_per_token": 4.759681890402418e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.3989991189999387,
+                "sec_per_token": 0.0003169174892771554
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03398502700053996,
+                "sec_per_token": 2.699366719661633e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17494890999995505,
+              "share": 0.03537983462174674
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 218.01321253149885,
+            "ttft": 0.02854922425002826,
+            "output_tokens": 1239,
+            "rounds": 136,
+            "decode_time": 5.683141795000097,
+            "mean_accept": 9.110294117647058,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.8365412320003998,
+                "sec_per_token": 0.000675174521388539,
+                "share": 0.14719696642733257
+              },
+              "candidate_build": {
+                "sec": 0.4136057210003514,
+                "sec_per_token": 0.00033382221226824167,
+                "share": 0.0727776529109713
+              },
+              "candidate_pack": {
+                "sec": 0.02955418800024745,
+                "sec_per_token": 2.3853259080102864e-05,
+                "share": 0.005200325641399371
+              },
+              "verify": {
+                "sec": 3.9844249710000668,
+                "sec_per_token": 0.0032158393631961796,
+                "share": 0.7010954705556487
+              },
+              "walk_accept": {
+                "sec": 0.02814654699983521,
+                "sec_per_token": 2.271714850672737e-05,
+                "share": 0.004952638525506776
+              },
+              "kv_update": {
+                "sec": 0.18615626999979895,
+                "sec_per_token": 0.00015024719128313072,
+                "share": 0.032755872845469935
+              },
+              "state_carry": {
+                "sec": 0.006754305000242766,
+                "sec_per_token": 5.451416465086978e-06,
+                "share": 0.0011884808164007196
+              },
+              "unaccounted": {
+                "sec": 0.029312943999116214,
+                "sec_per_token": 2.365855044319307e-05,
+                "share": 0.005157876585959037
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.07302429500003882,
+                "sec_per_token": 5.893809120261406e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.2813609309997105,
+                "sec_per_token": 0.00022708711137991162
+              },
+              "candidate_build.visibility": {
+                "sec": 0.04187807099953034,
+                "sec_per_token": 3.3799895883398173e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16864561700003833,
+              "share": 0.02967471569131163
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 198.77459262655327,
+            "ttft": 0.029457409249971533,
+            "output_tokens": 1284,
+            "rounds": 151,
+            "decode_time": 6.459578073000046,
+            "mean_accept": 8.52980132450331,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.9518506790006995,
+                "sec_per_token": 0.0007413167281936912,
+                "share": 0.14735493065395028
+              },
+              "candidate_build": {
+                "sec": 0.45778426899937585,
+                "sec_per_token": 0.00035652980451664787,
+                "share": 0.07086906665202135
+              },
+              "candidate_pack": {
+                "sec": 0.03307121399910784,
+                "sec_per_token": 2.5756397195566854e-05,
+                "share": 0.0051197173600765
+              },
+              "verify": {
+                "sec": 4.5594277859997305,
+                "sec_per_token": 0.0035509562196259586,
+                "share": 0.7058398759908755
+              },
+              "walk_accept": {
+                "sec": 0.0313456830003247,
+                "sec_per_token": 2.441252570118746e-05,
+                "share": 0.004852589851238799
+              },
+              "kv_update": {
+                "sec": 0.21290785399963852,
+                "sec_per_token": 0.0001658160856695004,
+                "share": 0.0329600248798846
+              },
+              "state_carry": {
+                "sec": 0.0069946920004326785,
+                "sec_per_token": 5.447579439589314e-06,
+                "share": 0.0010828403839051532
+              },
+              "unaccounted": {
+                "sec": 0.03143979100070737,
+                "sec_per_token": 2.448581853637646e-05,
+                "share": 0.004867158604695937
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.08148252500006947,
+                "sec_per_token": 6.345991043619118e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.31138743899958854,
+                "sec_per_token": 0.00024251358177538048
+              },
+              "candidate_build.visibility": {
+                "sec": 0.04593605200022921,
+                "sec_per_token": 3.577574143320032e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17475610500002858,
+              "share": 0.027053795623351907
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 122.91392869810613,
+            "ttft": 0.02802048449999006,
+            "output_tokens": 1293,
+            "rounds": 261,
+            "decode_time": 10.519556356999942,
+            "mean_accept": 4.961685823754789,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6169501189995685,
+                "sec_per_token": 0.0012505414686771604,
+                "share": 0.15370896491500943
+              },
+              "candidate_build": {
+                "sec": 0.5598678019999284,
+                "sec_per_token": 0.00043299907347248904,
+                "share": 0.05322161724314354
+              },
+              "candidate_pack": {
+                "sec": 0.05697402700059229,
+                "sec_per_token": 4.406343928893448e-05,
+                "share": 0.005416010434953421
+              },
+              "verify": {
+                "sec": 7.652506902999619,
+                "sec_per_token": 0.005918412144624609,
+                "share": 0.7274552883503945
+              },
+              "walk_accept": {
+                "sec": 0.05420235699995146,
+                "sec_per_token": 4.191984300073586e-05,
+                "share": 0.00515253259362825
+              },
+              "kv_update": {
+                "sec": 0.352705939000316,
+                "sec_per_token": 0.0002727810819801361,
+                "share": 0.033528594460698696
+              },
+              "state_carry": {
+                "sec": 0.011820060000502508,
+                "sec_per_token": 9.141577726606735e-06,
+                "share": 0.0011236272328763353
+              },
+              "unaccounted": {
+                "sec": 0.0531174019994296,
+                "sec_per_token": 4.108074400574602e-05,
+                "share": 0.005049395639587417
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14223125700044648,
+                "sec_per_token": 0.00011000097215811793
+              },
+              "candidate_build.expand": {
+                "sec": 0.30562328099983915,
+                "sec_per_token": 0.00023636758004627931
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08088128299965547,
+                "sec_per_token": 6.25531964421156e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16141174800003455,
+              "share": 0.01534396912970837
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 18.944998527813002,
+            "ttft": 0.028425664750017177,
+            "output_tokens": 1307,
+            "rounds": 104,
+            "decode_time": 68.98918456400003,
+            "mean_accept": 12.60576923076923,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.6841925140005856,
+                "sec_per_token": 0.0005234831782712973,
+                "share": 0.009917388041684598
+              },
+              "candidate_build": {
+                "sec": 61.682194876999745,
+                "sec_per_token": 0.04719372217061955,
+                "share": 0.8940849970444031
+              },
+              "candidate_pack": {
+                "sec": 0.04666750300026479,
+                "sec_per_token": 3.570581713868767e-05,
+                "share": 0.0006764466531267982
+              },
+              "verify": {
+                "sec": 3.250115232000212,
+                "sec_per_token": 0.0024866987237951127,
+                "share": 0.047110503661412874
+              },
+              "walk_accept": {
+                "sec": 0.028089210000644016,
+                "sec_per_token": 2.1491361897967877e-05,
+                "share": 0.0004071538195176979
+              },
+              "kv_update": {
+                "sec": 0.14442888699994683,
+                "sec_per_token": 0.00011050412165259895,
+                "share": 0.002093500422025756
+              },
+              "state_carry": {
+                "sec": 0.005401438999854236,
+                "sec_per_token": 4.132700076399568e-06,
+                "share": 7.82939968632825e-05
+              },
+              "unaccounted": {
+                "sec": 0.026073025998755384,
+                "sec_per_token": 1.9948757458879405e-05,
+                "share": 0.000377929180690169
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 12.432905712999514,
+                "sec_per_token": 0.009512552190512252
+              },
+              "candidate_build.expand": {
+                "sec": 48.89980702399981,
+                "sec_per_token": 0.03741377737107866
+              },
+              "candidate_build.visibility": {
+                "sec": 0.020514945999423162,
+                "sec_per_token": 1.5696209639956514e-05
+              }
+            },
+            "cold_round": {
+              "sec": 3.1220218760000193,
+              "share": 0.04525378718027571
+            }
+          }
+        },
+        "humaneval": {
+          "beam.geo50": {
+            "tps_decode": 176.64836198044276,
+            "ttft": 0.029005931000028795,
+            "output_tokens": 1922,
+            "rounds": 257,
+            "decode_time": 10.88037261400018,
+            "mean_accept": 7.494163424124514,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.62509999399947,
+                "sec_per_token": 0.000845525491154771,
+                "share": 0.14936069302519964
+              },
+              "candidate_build": {
+                "sec": 0.8159070590002102,
+                "sec_per_token": 0.0004245093959418367,
+                "share": 0.07498888943843267
+              },
+              "candidate_pack": {
+                "sec": 0.0575412890024154,
+                "sec_per_token": 2.9938235693244222e-05,
+                "share": 0.0052885402957960174
+              },
+              "verify": {
+                "sec": 7.7352932399986685,
+                "sec_per_token": 0.00402460626430732,
+                "share": 0.7109401042061169
+              },
+              "walk_accept": {
+                "sec": 0.053928225001641295,
+                "sec_per_token": 2.805838969908496e-05,
+                "share": 0.004956468580152287
+              },
+              "kv_update": {
+                "sec": 0.3582798829997955,
+                "sec_per_token": 0.00018640992871997686,
+                "share": 0.032929008565275
+              },
+              "state_carry": {
+                "sec": 0.01196851799909382,
+                "sec_per_token": 6.2271165447938706e-06,
+                "share": 0.0011000099374991518
+              },
+              "unaccounted": {
+                "sec": 0.0527848459987581,
+                "sec_per_token": 2.7463499479062488e-05,
+                "share": 0.004851382197227132
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.1396203519990422,
+                "sec_per_token": 7.264326326693144e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5634652240006517,
+                "sec_per_token": 0.00029316608949045355
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08008522400075435,
+                "sec_per_token": 4.166765036459644e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16956956000012724,
+              "share": 0.015584903754301188
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 197.0212590376391,
+            "ttft": 0.029259547750001502,
+            "output_tokens": 1996,
+            "rounds": 236,
+            "decode_time": 10.130886432000125,
+            "mean_accept": 8.491525423728813,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.4876861769995458,
+                "sec_per_token": 0.0007453337560117965,
+                "share": 0.14684659501269665
+              },
+              "candidate_build": {
+                "sec": 0.882019035998951,
+                "sec_per_token": 0.00044189330460869293,
+                "share": 0.08706237523430765
+              },
+              "candidate_pack": {
+                "sec": 0.05290168500073378,
+                "sec_per_token": 2.6503850200768427e-05,
+                "share": 0.0052218219359003795
+              },
+              "verify": {
+                "sec": 7.094050196999319,
+                "sec_per_token": 0.0035541333652301197,
+                "share": 0.7002398304053195
+              },
+              "walk_accept": {
+                "sec": 0.04949115700014772,
+                "sec_per_token": 2.479516883774936e-05,
+                "share": 0.004885175382464213
+              },
+              "kv_update": {
+                "sec": 0.33024899200222535,
+                "sec_per_token": 0.00016545540681474217,
+                "share": 0.032598232565225274
+              },
+              "state_carry": {
+                "sec": 0.01099126500002967,
+                "sec_per_token": 5.506645791598031e-06,
+                "share": 0.001084926286934961
+              },
+              "unaccounted": {
+                "sec": 0.048490197999285556,
+                "sec_per_token": 2.429368637238755e-05,
+                "share": 0.0047863726757533314
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.12810396700206184,
+                "sec_per_token": 6.418034418940973e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.647998782001423,
+                "sec_per_token": 0.00032464868837746644
+              },
+              "candidate_build.visibility": {
+                "sec": 0.07432239800073148,
+                "sec_per_token": 3.723567034104784e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1750077249998867,
+              "share": 0.01727467050139809
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 208.2827351684784,
+            "ttft": 0.02825183999999581,
+            "output_tokens": 1987,
+            "rounds": 219,
+            "decode_time": 9.539916970999684,
+            "mean_accept": 9.114155251141552,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.3656266040010223,
+                "sec_per_token": 0.0006872806260699659,
+                "share": 0.14314868862615676
+              },
+              "candidate_build": {
+                "sec": 1.0135636789985938,
+                "sec_per_token": 0.0005100974730742797,
+                "share": 0.10624449689444025
+              },
+              "candidate_pack": {
+                "sec": 0.05351698000174565,
+                "sec_per_token": 2.6933558128709435e-05,
+                "share": 0.005609795154866807
+              },
+              "verify": {
+                "sec": 6.532251449998398,
+                "sec_per_token": 0.0032874944388517355,
+                "share": 0.6847283335752016
+              },
+              "walk_accept": {
+                "sec": 0.04561741399982111,
+                "sec_per_token": 2.2957933568103225e-05,
+                "share": 0.004781741197380765
+              },
+              "kv_update": {
+                "sec": 0.3007769440006314,
+                "sec_per_token": 0.00015137239255190305,
+                "share": 0.03152825594970698
+              },
+              "state_carry": {
+                "sec": 0.01011796199861692,
+                "sec_per_token": 5.092079516163523e-06,
+                "share": 0.0010605922493219207
+              },
+              "unaccounted": {
+                "sec": 0.045157773000937595,
+                "sec_per_token": 2.2726609461971612e-05,
+                "share": 0.004733560379845269
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.11842087800232548,
+                "sec_per_token": 5.959782486277075e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.7953481000007514,
+                "sec_per_token": 0.000400275842979744
+              },
+              "candidate_build.visibility": {
+                "sec": 0.0690900940002166,
+                "sec_per_token": 3.47710588828468e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17328816499991717,
+              "share": 0.01816453597307969
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 230.19818031349303,
+            "ttft": 0.028394066999993584,
+            "output_tokens": 1995,
+            "rounds": 200,
+            "decode_time": 8.666445570000292,
+            "mean_accept": 10.015,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.2468541800009234,
+                "sec_per_token": 0.0006249895639102372,
+                "share": 0.14387146032706016
+              },
+              "candidate_build": {
+                "sec": 0.9343712450012163,
+                "sec_per_token": 0.0004683565137850708,
+                "share": 0.10781481721129471
+              },
+              "candidate_pack": {
+                "sec": 0.04421502100046837,
+                "sec_per_token": 2.2162917794720986e-05,
+                "share": 0.005101863346782305
+              },
+              "verify": {
+                "sec": 5.901766437998276,
+                "sec_per_token": 0.002958278916289863,
+                "share": 0.6809904233896985
+              },
+              "walk_accept": {
+                "sec": 0.04200169700095557,
+                "sec_per_token": 2.105348220599277e-05,
+                "share": 0.00484647329308204
+              },
+              "kv_update": {
+                "sec": 0.2737021449994472,
+                "sec_per_token": 0.0001371940576438332,
+                "share": 0.03158182241943487
+              },
+              "state_carry": {
+                "sec": 0.009246377999033939,
+                "sec_per_token": 4.634775939365383e-06,
+                "share": 0.0010669169874026713
+              },
+              "unaccounted": {
+                "sec": 0.04111066799976015,
+                "sec_per_token": 2.0606851127699324e-05,
+                "share": 0.004743659631587436
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.108100209000213,
+                "sec_per_token": 5.4185568421159395e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.7358535710000069,
+                "sec_per_token": 0.000368848907769427
+              },
+              "candidate_build.visibility": {
+                "sec": 0.062190580001015405,
+                "sec_per_token": 3.1173223058153085e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17317779800021071,
+              "share": 0.01998256339365723
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 187.2964899245334,
+            "ttft": 0.028614347000001317,
+            "output_tokens": 1948,
+            "rounds": 240,
+            "decode_time": 10.400622034000207,
+            "mean_accept": 8.191666666666666,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.4928283790005707,
+                "sec_per_token": 0.0007663390035937221,
+                "share": 0.14353260546536856
+              },
+              "candidate_build": {
+                "sec": 1.0854748369988556,
+                "sec_per_token": 0.0005572252756667637,
+                "share": 0.10436633822961536
+              },
+              "candidate_pack": {
+                "sec": 0.0586611619995665,
+                "sec_per_token": 3.011353285398691e-05,
+                "share": 0.005640159002778865
+              },
+              "verify": {
+                "sec": 7.154722882001693,
+                "sec_per_token": 0.0036728556889125733,
+                "share": 0.687912978532679
+              },
+              "walk_accept": {
+                "sec": 0.04970038500039209,
+                "sec_per_token": 2.5513544661392242e-05,
+                "share": 0.004778597360611586
+              },
+              "kv_update": {
+                "sec": 0.32685154200112265,
+                "sec_per_token": 0.00016778826591433402,
+                "share": 0.03142615325627899
+              },
+              "state_carry": {
+                "sec": 0.011066917000334797,
+                "sec_per_token": 5.6811688913422986e-06,
+                "share": 0.0010640629920168655
+              },
+              "unaccounted": {
+                "sec": 0.048813649997441644,
+                "sec_per_token": 2.505834188780372e-05,
+                "share": 0.004693339478914543
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.12995665799894596,
+                "sec_per_token": 6.67128634491509e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.847558557997786,
+                "sec_per_token": 0.0004350916622165226
+              },
+              "candidate_build.visibility": {
+                "sec": 0.07417574999954013,
+                "sec_per_token": 3.807790041044155e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1725022800002307,
+              "share": 0.01658576568173627
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 175.89443444807605,
+            "ttft": 0.028678391999960695,
+            "output_tokens": 2005,
+            "rounds": 274,
+            "decode_time": 11.398882553000135,
+            "mean_accept": 7.346715328467154,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.7073594680005044,
+                "sec_per_token": 0.0008515508568581069,
+                "share": 0.14978305637083128
+              },
+              "candidate_build": {
+                "sec": 0.8376641959985136,
+                "sec_per_token": 0.0004177876289269395,
+                "share": 0.07348651870950668
+              },
+              "candidate_pack": {
+                "sec": 0.06044291800174051,
+                "sec_per_token": 3.014609376645412e-05,
+                "share": 0.005302530113869118
+              },
+              "verify": {
+                "sec": 8.122016831000792,
+                "sec_per_token": 0.004050881212469223,
+                "share": 0.7125274598836105
+              },
+              "walk_accept": {
+                "sec": 0.057203309999636076,
+                "sec_per_token": 2.8530329176875848e-05,
+                "share": 0.00501832611518402
+              },
+              "kv_update": {
+                "sec": 0.37698117800061937,
+                "sec_per_token": 0.00018802053765616927,
+                "share": 0.03307176613565508
+              },
+              "state_carry": {
+                "sec": 0.012521723999952883,
+                "sec_per_token": 6.245248877781987e-06,
+                "share": 0.0010985045193449442
+              },
+              "unaccounted": {
+                "sec": 0.05581131699852904,
+                "sec_per_token": 2.783606832844341e-05,
+                "share": 0.0048962094958895554
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14917996300050618,
+                "sec_per_token": 7.440397157132478e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.5680138999979363,
+                "sec_per_token": 0.00028329870324086596
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08501711799874556,
+                "sec_per_token": 4.240255261782821e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.168881610999847,
+              "share": 0.014815628656108762
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 192.1197014955038,
+            "ttft": 0.02857994125008645,
+            "output_tokens": 1983,
+            "rounds": 248,
+            "decode_time": 10.321689990999744,
+            "mean_accept": 8.028225806451612,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.5469428850003624,
+                "sec_per_token": 0.0007801023121534859,
+                "share": 0.14987302334688002
+              },
+              "candidate_build": {
+                "sec": 0.7317114049993734,
+                "sec_per_token": 0.00036899213565273493,
+                "share": 0.07089065895579187
+              },
+              "candidate_pack": {
+                "sec": 0.05401299400102744,
+                "sec_per_token": 2.723802017197551e-05,
+                "share": 0.005232960304768446
+              },
+              "verify": {
+                "sec": 7.363678596998739,
+                "sec_per_token": 0.0037134032259196867,
+                "share": 0.7134179192961311
+              },
+              "walk_accept": {
+                "sec": 0.05181891499739777,
+                "sec_per_token": 2.6131575893796153e-05,
+                "share": 0.00502039056032322
+              },
+              "kv_update": {
+                "sec": 0.34264792200019656,
+                "sec_per_token": 0.0001727926989410976,
+                "share": 0.033196881741166126
+              },
+              "state_carry": {
+                "sec": 0.011404738000692305,
+                "sec_per_token": 5.751254664998641e-06,
+                "share": 0.0011049293294641625
+              },
+              "unaccounted": {
+                "sec": 0.05172695200224098,
+                "sec_per_token": 2.6085200202844667e-05,
+                "share": 0.005011480876420973
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.1348337999990008,
+                "sec_per_token": 6.799485627786223e-05
+              },
+              "candidate_build.expand": {
+                "sec": 0.48943402999952923,
+                "sec_per_token": 0.00024681494200682263
+              },
+              "candidate_build.visibility": {
+                "sec": 0.0761093979991756,
+                "sec_per_token": 3.838093696377993e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.16774558299971432,
+              "share": 0.016251755589054145
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 120.37684317222937,
+            "ttft": 0.028816402500012828,
+            "output_tokens": 1995,
+            "rounds": 404,
+            "decode_time": 16.5729549590003,
+            "mean_accept": 4.945544554455446,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.548182809999389,
+                "sec_per_token": 0.0012772846165410472,
+                "share": 0.15375548997166277
+              },
+              "candidate_build": {
+                "sec": 0.8695921110036124,
+                "sec_per_token": 0.0004358857699266228,
+                "share": 0.05247055296746352
+              },
+              "candidate_pack": {
+                "sec": 0.08893098199973792,
+                "sec_per_token": 4.4576933333201965e-05,
+                "share": 0.005366030512949777
+              },
+              "verify": {
+                "sec": 12.15364158600164,
+                "sec_per_token": 0.006092050920301574,
+                "share": 0.7333418582303782
+              },
+              "walk_accept": {
+                "sec": 0.08470006699667465,
+                "sec_per_token": 4.245617393317025e-05,
+                "share": 0.005110740191246128
+              },
+              "kv_update": {
+                "sec": 0.5622739620032462,
+                "sec_per_token": 0.00028184158496403317,
+                "share": 0.03392720027262798
+              },
+              "state_carry": {
+                "sec": 0.01871743100173262,
+                "sec_per_token": 9.382170928186777e-06,
+                "share": 0.0011293961184373894
+              },
+              "unaccounted": {
+                "sec": 0.08257490299411074,
+                "sec_per_token": 4.139092881910313e-05,
+                "share": 0.004982509347210087
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.22171001000106116,
+                "sec_per_token": 0.00011113283709326374
+              },
+              "candidate_build.expand": {
+                "sec": 0.47537407300183077,
+                "sec_per_token": 0.00023828274335931367
+              },
+              "candidate_build.visibility": {
+                "sec": 0.12428417999672092,
+                "sec_per_token": 6.229783458482252e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1643411070001548,
+              "share": 0.00991622238802416
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 13.249254420032358,
+            "ttft": 0.0288884295000571,
+            "output_tokens": 1966,
+            "rounds": 198,
+            "decode_time": 148.38570818200037,
+            "mean_accept": 9.974747474747474,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.3228310820020397,
+                "sec_per_token": 0.0006728540600213833,
+                "share": 0.00891481462877503
+              },
+              "candidate_build": {
+                "sec": 137.094267425,
+                "sec_per_token": 0.0697325877034588,
+                "share": 0.9239047958503456
+              },
+              "candidate_pack": {
+                "sec": 0.0886472319987206,
+                "sec_per_token": 4.509014852427294e-05,
+                "share": 0.0005974108496351388
+              },
+              "verify": {
+                "sec": 6.261303545998999,
+                "sec_per_token": 0.003184793258392166,
+                "share": 0.04219613615564166
+              },
+              "walk_accept": {
+                "sec": 0.05319823200079554,
+                "sec_per_token": 2.7059121058390407e-05,
+                "share": 0.0003585131792850698
+              },
+              "kv_update": {
+                "sec": 0.2809667529991202,
+                "sec_per_token": 0.00014291289572691772,
+                "share": 0.001893489315389488
+              },
+              "state_carry": {
+                "sec": 0.010473850998550915,
+                "sec_per_token": 5.327492878204941e-06,
+                "share": 7.058530856424774e-05
+              },
+              "unaccounted": {
+                "sec": 0.048905287001844044,
+                "sec_per_token": 2.4875527467875914e-05,
+                "share": 0.00032958219225439126
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 24.663322130001006,
+                "sec_per_token": 0.012544924786368773
+              },
+              "candidate_build.expand": {
+                "sec": 111.72529465499997,
+                "sec_per_token": 0.0568287358367243
+              },
+              "candidate_build.visibility": {
+                "sec": 0.03922036400081197,
+                "sec_per_token": 1.9949320448022364e-05
+              }
+            },
+            "cold_round": {
+              "sec": 3.2251147740003034,
+              "share": 0.02173467252010945
+            }
+          }
+        },
+        "mt-bench": {
+          "beam.geo50": {
+            "tps_decode": 97.01418498334786,
+            "ttft": 0.029894922250093714,
+            "output_tokens": 1099,
+            "rounds": 264,
+            "decode_time": 11.328240299999834,
+            "mean_accept": 4.174242424242424,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.69433413499587,
+                "sec_per_token": 0.0015417053093683985,
+                "share": 0.14956728407287537
+              },
+              "candidate_build": {
+                "sec": 0.8572081420020368,
+                "sec_per_token": 0.0007799892101929361,
+                "share": 0.0756700175226729
+              },
+              "candidate_pack": {
+                "sec": 0.0584317809998538,
+                "sec_per_token": 5.316813557766497e-05,
+                "share": 0.005158063340151308
+              },
+              "verify": {
+                "sec": 8.039415189000238,
+                "sec_per_token": 0.0073152094531394336,
+                "share": 0.709679083078804
+              },
+              "walk_accept": {
+                "sec": 0.055282585002487394,
+                "sec_per_token": 5.030262511600309e-05,
+                "share": 0.004880068178151924
+              },
+              "kv_update": {
+                "sec": 0.37958120300140763,
+                "sec_per_token": 0.0003453878098283964,
+                "share": 0.033507516873685424
+              },
+              "state_carry": {
+                "sec": 0.012274786003672489,
+                "sec_per_token": 1.116905004883757e-05,
+                "share": 0.0010835562875261984
+              },
+              "unaccounted": {
+                "sec": 0.054931754994413495,
+                "sec_per_token": 4.9983398539047764e-05,
+                "share": 0.004849098671963579
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14270048300022609,
+                "sec_per_token": 0.00012984575341239862
+              },
+              "candidate_build.expand": {
+                "sec": 0.5967397600045388,
+                "sec_per_token": 0.0005429843130159588
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08401416999868161,
+                "sec_per_token": 7.64460145574901e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17678072399985467,
+              "share": 0.015605311974169303
+            }
+          },
+          "beam.geo60": {
+            "tps_decode": 100.52342999500347,
+            "ttft": 0.029295596999929785,
+            "output_tokens": 1145,
+            "rounds": 269,
+            "decode_time": 11.39037933800023,
+            "mean_accept": 4.286245353159852,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6934242979987175,
+                "sec_per_token": 0.0014789731860250807,
+                "share": 0.14867145752987945
+              },
+              "candidate_build": {
+                "sec": 0.9990266679958495,
+                "sec_per_token": 0.0008725123737955017,
+                "share": 0.08770793652700641
+              },
+              "candidate_pack": {
+                "sec": 0.06069951599988599,
+                "sec_per_token": 5.301267772915807e-05,
+                "share": 0.0053290161985547
+              },
+              "verify": {
+                "sec": 7.964456649998056,
+                "sec_per_token": 0.006955857336242844,
+                "share": 0.6992266379950387
+              },
+              "walk_accept": {
+                "sec": 0.05706070999667645,
+                "sec_per_token": 4.983468121980476e-05,
+                "share": 0.005009553088922357
+              },
+              "kv_update": {
+                "sec": 0.3728394439983731,
+                "sec_per_token": 0.0003256239685575311,
+                "share": 0.03273283820798818
+              },
+              "state_carry": {
+                "sec": 0.012383879999333658,
+                "sec_per_token": 1.081561571994206e-05,
+                "share": 0.0010872227896764545
+              },
+              "unaccounted": {
+                "sec": 0.05559748101336481,
+                "sec_per_token": 4.855675197673783e-05,
+                "share": 0.004881091258118351
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.1447113039987471,
+                "sec_per_token": 0.00012638541833951712
+              },
+              "candidate_build.expand": {
+                "sec": 0.7330846290019508,
+                "sec_per_token": 0.0006402485842811797
+              },
+              "candidate_build.visibility": {
+                "sec": 0.0853768589995525,
+                "sec_per_token": 7.456494235768777e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17489069099997323,
+              "share": 0.015354246404815364
+            }
+          },
+          "beam.geo75": {
+            "tps_decode": 100.82065034143255,
+            "ttft": 0.02927351899995756,
+            "output_tokens": 1082,
+            "rounds": 240,
+            "decode_time": 10.731928393000544,
+            "mean_accept": 4.5125,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.5419549100033692,
+                "sec_per_token": 0.0014250969593376794,
+                "share": 0.1436792022400229
+              },
+              "candidate_build": {
+                "sec": 1.1495962339970447,
+                "sec_per_token": 0.0010624734140453277,
+                "share": 0.10711926057453208
+              },
+              "candidate_pack": {
+                "sec": 0.06023538299723441,
+                "sec_per_token": 5.5670409424431065e-05,
+                "share": 0.005612726882944956
+              },
+              "verify": {
+                "sec": 7.348178146001146,
+                "sec_per_token": 0.006791292186692372,
+                "share": 0.6847024949210145
+              },
+              "walk_accept": {
+                "sec": 0.050663018999330234,
+                "sec_per_token": 4.682349260566565e-05,
+                "share": 0.0047207749757604694
+              },
+              "kv_update": {
+                "sec": 0.3421782230034296,
+                "sec_per_token": 0.000316246047138105,
+                "share": 0.03188413214037108
+              },
+              "state_carry": {
+                "sec": 0.011253652999585029,
+                "sec_per_token": 1.0400788354514814e-05,
+                "share": 0.0010486142459657816
+              },
+              "unaccounted": {
+                "sec": 0.0501069249989996,
+                "sec_per_token": 4.630954251293863e-05,
+                "share": 0.004668958193168692
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.1294032289997631,
+                "sec_per_token": 0.00011959632994432818
+              },
+              "candidate_build.expand": {
+                "sec": 0.9083947700030421,
+                "sec_per_token": 0.0008395515434408892
+              },
+              "candidate_build.visibility": {
+                "sec": 0.07760148400348044,
+                "sec_per_token": 7.172041035441815e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17776190000040515,
+              "share": 0.016563835826219543
+            }
+          },
+          "beam.flat": {
+            "tps_decode": 95.43225895148115,
+            "ttft": 0.02968289174992833,
+            "output_tokens": 1068,
+            "rounds": 256,
+            "decode_time": 11.191184320000048,
+            "mean_accept": 4.19140625,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6205260869985523,
+                "sec_per_token": 0.0015173465234068842,
+                "share": 0.14480380634089543
+              },
+              "candidate_build": {
+                "sec": 1.2259424409985513,
+                "sec_per_token": 0.0011478861807102541,
+                "share": 0.10954537124436765
+              },
+              "candidate_pack": {
+                "sec": 0.057831480996583196,
+                "sec_per_token": 5.4149326775826965e-05,
+                "share": 0.00516759257491909
+              },
+              "verify": {
+                "sec": 7.629749781001237,
+                "sec_per_token": 0.007143960469102282,
+                "share": 0.6817642854265137
+              },
+              "walk_accept": {
+                "sec": 0.054148343997667325,
+                "sec_per_token": 5.070069662702933e-05,
+                "share": 0.00483848200953115
+              },
+              "kv_update": {
+                "sec": 0.3575114810009836,
+                "sec_per_token": 0.0003347485777162768,
+                "share": 0.03194581295225974
+              },
+              "state_carry": {
+                "sec": 0.011940679002009347,
+                "sec_per_token": 1.118041105057055e-05,
+                "share": 0.00106697188256205
+              },
+              "unaccounted": {
+                "sec": 0.05297876300414828,
+                "sec_per_token": 4.960558333721749e-05,
+                "share": 0.004733972874476617
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.13822794200018507,
+                "sec_per_token": 0.000129426911985192
+              },
+              "candidate_build.expand": {
+                "sec": 0.9698113339998145,
+                "sec_per_token": 0.0009080630468163057
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08072143700110246,
+                "sec_per_token": 7.558186985121953e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.18055526300031488,
+              "share": 0.016133704694474563
+            }
+          },
+          "beam.invgeo75": {
+            "tps_decode": 65.4924793801261,
+            "ttft": 0.028465173500023866,
+            "output_tokens": 1070,
+            "rounds": 366,
+            "decode_time": 16.337753740999688,
+            "mean_accept": 2.931693989071038,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.3634411189937055,
+                "sec_per_token": 0.002208823475695052,
+                "share": 0.14466132593629663
+              },
+              "candidate_build": {
+                "sec": 1.7232519229978607,
+                "sec_per_token": 0.0016105158158858511,
+                "share": 0.10547667386327106
+              },
+              "candidate_pack": {
+                "sec": 0.09244381199596319,
+                "sec_per_token": 8.639608597753568e-05,
+                "share": 0.005658293879407358
+              },
+              "verify": {
+                "sec": 11.286646865997227,
+                "sec_per_token": 0.010548268099062829,
+                "share": 0.6908322309739142
+              },
+              "walk_accept": {
+                "sec": 0.07701401400163377,
+                "sec_per_token": 7.197571402021848e-05,
+                "share": 0.0047138679663390115
+              },
+              "kv_update": {
+                "sec": 0.5279221239995877,
+                "sec_per_token": 0.0004933851626164371,
+                "share": 0.032313017589117164
+              },
+              "state_carry": {
+                "sec": 0.017194503004930084,
+                "sec_per_token": 1.6069628976570173e-05,
+                "share": 0.0010524398443942987
+              },
+              "unaccounted": {
+                "sec": 0.0760777270086237,
+                "sec_per_token": 7.110067944731187e-05,
+                "share": 0.004656559782616028
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.198477096004126,
+                "sec_per_token": 0.00018549261308796822
+              },
+              "candidate_build.expand": {
+                "sec": 1.3562682609999683,
+                "sec_per_token": 0.001267540430841092
+              },
+              "candidate_build.visibility": {
+                "sec": 0.11622670299630045,
+                "sec_per_token": 0.00010862308691243033
+              }
+            },
+            "cold_round": {
+              "sec": 0.173761653000156,
+              "share": 0.010635590164644245
+            }
+          },
+          "beam.invgeo50": {
+            "tps_decode": 75.01269392046201,
+            "ttft": 0.028992158750043018,
+            "output_tokens": 1096,
+            "rounds": 355,
+            "decode_time": 14.610860412000648,
+            "mean_accept": 3.095774647887324,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.214275635003787,
+                "sec_per_token": 0.0020203244844925064,
+                "share": 0.1515499821752516
+              },
+              "candidate_build": {
+                "sec": 1.0676879800032566,
+                "sec_per_token": 0.000974167864966475,
+                "share": 0.07307495588188015
+              },
+              "candidate_pack": {
+                "sec": 0.0795537910018993,
+                "sec_per_token": 7.258557573165995e-05,
+                "share": 0.005444839575399522
+              },
+              "verify": {
+                "sec": 10.433522946005041,
+                "sec_per_token": 0.009519637724457155,
+                "share": 0.7140936708583879
+              },
+              "walk_accept": {
+                "sec": 0.07396161799579204,
+                "sec_per_token": 6.74832280983504e-05,
+                "share": 0.00506209873410628
+              },
+              "kv_update": {
+                "sec": 0.48494411199999377,
+                "sec_per_token": 0.00044246725547444687,
+                "share": 0.03319066080473155
+              },
+              "state_carry": {
+                "sec": 0.016281898001579975,
+                "sec_per_token": 1.4855746351806547e-05,
+                "share": 0.0011143695540480846
+              },
+              "unaccounted": {
+                "sec": 0.07242925898867725,
+                "sec_per_token": 6.608509031813618e-05,
+                "share": 0.004957220652740436
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.19173573200168903,
+                "sec_per_token": 0.0001749413613154097
+              },
+              "candidate_build.expand": {
+                "sec": 0.7179806989927329,
+                "sec_per_token": 0.0006550918786430044
+              },
+              "candidate_build.visibility": {
+                "sec": 0.1112022720008099,
+                "sec_per_token": 0.00010146192700803823
+              }
+            },
+            "cold_round": {
+              "sec": 0.16820317300062015,
+              "share": 0.011512201763454416
+            }
+          },
+          "beam.depth8": {
+            "tps_decode": 100.47415946488707,
+            "ttft": 0.030468993749877882,
+            "output_tokens": 1137,
+            "rounds": 261,
+            "decode_time": 11.316342490999887,
+            "mean_accept": 4.383141762452107,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.7188619200014728,
+                "sec_per_token": 0.0015117519085325179,
+                "share": 0.15189200232924358
+              },
+              "candidate_build": {
+                "sec": 0.8288444910006092,
+                "sec_per_token": 0.0007289749261219079,
+                "share": 0.07324314297307684
+              },
+              "candidate_pack": {
+                "sec": 0.062343354997210554,
+                "sec_per_token": 5.4831446787344376e-05,
+                "share": 0.005509143528202109
+              },
+              "verify": {
+                "sec": 8.020372445003204,
+                "sec_per_token": 0.007053977524189274,
+                "share": 0.7087424626271224
+              },
+              "walk_accept": {
+                "sec": 0.06478818099822092,
+                "sec_per_token": 5.698168953229633e-05,
+                "share": 0.005725187360646628
+              },
+              "kv_update": {
+                "sec": 0.37190419199896496,
+                "sec_per_token": 0.00032709251714948547,
+                "share": 0.03286434572784871
+              },
+              "state_carry": {
+                "sec": 0.012951286998941214,
+                "sec_per_token": 1.1390753736975562e-05,
+                "share": 0.001144476407394141
+              },
+              "unaccounted": {
+                "sec": 0.05872097100109386,
+                "sec_per_token": 5.16455329824924e-05,
+                "share": 0.0051890415165320265
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14231781900298301,
+                "sec_per_token": 0.00012516958575460246
+              },
+              "candidate_build.expand": {
+                "sec": 0.5584517670026798,
+                "sec_per_token": 0.0004911625039601406
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08992331100103002,
+                "sec_per_token": 7.908822427531224e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.17755564900016907,
+              "share": 0.0156901975299336
+            }
+          },
+          "beam.depth4": {
+            "tps_decode": 99.57675321542933,
+            "ttft": 0.029159174749906924,
+            "output_tokens": 1068,
+            "rounds": 263,
+            "decode_time": 10.7253948890002,
+            "mean_accept": 4.08745247148289,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6613234479950734,
+                "sec_per_token": 0.0015555462996208551,
+                "share": 0.1548962499925202
+              },
+              "candidate_build": {
+                "sec": 0.5530929760038816,
+                "sec_per_token": 0.0005178773183556944,
+                "share": 0.051568541925773315
+              },
+              "candidate_pack": {
+                "sec": 0.05852084200205354,
+                "sec_per_token": 5.4794795882072605e-05,
+                "share": 0.005456287867038967
+              },
+              "verify": {
+                "sec": 7.802463361995478,
+                "sec_per_token": 0.007305677305239212,
+                "share": 0.7274756260953679
+              },
+              "walk_accept": {
+                "sec": 0.05610348400296061,
+                "sec_per_token": 5.25313520626972e-05,
+                "share": 0.005230901480420034
+              },
+              "kv_update": {
+                "sec": 0.3622726480057281,
+                "sec_per_token": 0.00033920659925629974,
+                "share": 0.033777091823189595
+              },
+              "state_carry": {
+                "sec": 0.012172576002285496,
+                "sec_per_token": 1.1397543073301027e-05,
+                "share": 0.0011349303338723223
+              },
+              "unaccounted": {
+                "sec": 0.054688286992586654,
+                "sec_per_token": 5.120626122901372e-05,
+                "share": 0.0050989532374863065
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.14213922199860463,
+                "sec_per_token": 0.00013308915917472342
+              },
+              "candidate_build.expand": {
+                "sec": 0.2969679540044581,
+                "sec_per_token": 0.00027805988202664615
+              },
+              "candidate_build.visibility": {
+                "sec": 0.08231116000570182,
+                "sec_per_token": 7.707037453717399e-05
+              }
+            },
+            "cold_round": {
+              "sec": 0.1647572660001515,
+              "share": 0.015361417244331398
+            }
+          },
+          "bestfirst.ref": {
+            "tps_decode": 5.78924871387166,
+            "ttft": 0.029442744249934094,
+            "output_tokens": 1070,
+            "rounds": 242,
+            "decode_time": 184.82536385700018,
+            "mean_accept": 4.491735537190083,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 1.6711825180036612,
+                "sec_per_token": 0.0015618528205641694,
+                "share": 0.009041954432707944
+              },
+              "candidate_build": {
+                "sec": 171.51063760200032,
+                "sec_per_token": 0.16029031551588815,
+                "share": 0.9279605029464381
+              },
+              "candidate_pack": {
+                "sec": 0.1160309019990109,
+                "sec_per_token": 0.0001084400953261784,
+                "share": 0.0006277866823991986
+              },
+              "verify": {
+                "sec": 7.893147437999005,
+                "sec_per_token": 0.007376773306541126,
+                "share": 0.04270597537741601
+              },
+              "walk_accept": {
+                "sec": 0.07044023700336766,
+                "sec_per_token": 6.583199719940903e-05,
+                "share": 0.00038111780511828144
+              },
+              "kv_update": {
+                "sec": 0.3557525429996531,
+                "sec_per_token": 0.0003324790121492085,
+                "share": 0.0019248036934741255
+              },
+              "state_carry": {
+                "sec": 0.013379119997352973,
+                "sec_per_token": 1.2503850464815863e-05,
+                "share": 7.23879002218788e-05
+              },
+              "unaccounted": {
+                "sec": 0.06324113999812653,
+                "sec_per_token": 5.91038691571276e-05,
+                "share": 0.00034216699850273983
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 30.499238824001168,
+                "sec_per_token": 0.0285039615177581
+              },
+              "candidate_build.expand": {
+                "sec": 140.1130615760003,
+                "sec_per_token": 0.13094678651962643
+              },
+              "candidate_build.visibility": {
+                "sec": 0.04885321299730094,
+                "sec_per_token": 4.565720840869247e-05
+              }
+            },
+            "cold_round": {
+              "sec": 3.1315523569996913,
+              "share": 0.01694330416372171
+            }
+          }
+        }
+      }
+    }
+  },
+  "timing": {
+    "64": {
+      "beam.geo50": {
+        "tps_clean": 137.1583120007529,
+        "tps_instrumented": 136.17819173723848,
+        "instrumentation_tax": 0.007145904970812356,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7347989671871203,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 169.52841507330112
+          },
+          "humaneval": {
+            "tps_clean": 162.11947858205738
+          },
+          "mt-bench": {
+            "tps_clean": 91.88061384593148
+          }
+        }
+      },
+      "beam.geo60": {
+        "tps_clean": 146.8784334570469,
+        "tps_instrumented": 145.9929133743606,
+        "instrumentation_tax": 0.0060289319666883,
+        "dominant_phase": "verify",
+        "dominant_share": 0.728631206401693,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 197.2036926779226
+          },
+          "humaneval": {
+            "tps_clean": 175.72431588694255
+          },
+          "mt-bench": {
+            "tps_clean": 95.10938214157524
+          }
+        }
+      },
+      "beam.geo75": {
+        "tps_clean": 155.46331275082252,
+        "tps_instrumented": 155.679785602627,
+        "instrumentation_tax": -0.0013924368905700035,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7151763619307899,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 229.8622774657834
+          },
+          "humaneval": {
+            "tps_clean": 189.824567877637
+          },
+          "mt-bench": {
+            "tps_clean": 91.21214824163367
+          }
+        }
+      },
+      "beam.flat": {
+        "tps_clean": 152.70902843890352,
+        "tps_instrumented": 150.09794821210562,
+        "instrumentation_tax": 0.017098401145565156,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7018529431261288,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 254.24603540950068
+          },
+          "humaneval": {
+            "tps_clean": 199.5108491502108
+          },
+          "mt-bench": {
+            "tps_clean": 81.24287327443194
+          }
+        }
+      },
+      "beam.invgeo75": {
+        "tps_clean": 124.35755381805322,
+        "tps_instrumented": 123.12068825404228,
+        "instrumentation_tax": 0.00994604289033052,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7171952458195238,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 213.81662173706283
+          },
+          "humaneval": {
+            "tps_clean": 165.3385757270531
+          },
+          "mt-bench": {
+            "tps_clean": 64.0991902578013
+          }
+        }
+      },
+      "beam.invgeo50": {
+        "tps_clean": 126.19660455648592,
+        "tps_instrumented": 124.66377628908397,
+        "instrumentation_tax": 0.01214635110658513,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7361148431999615,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 179.02748154942086
+          },
+          "humaneval": {
+            "tps_clean": 155.74764165097818
+          },
+          "mt-bench": {
+            "tps_clean": 74.69540089918456
+          }
+        }
+      },
+      "beam.depth8": {
+        "tps_clean": 146.09122289450644,
+        "tps_instrumented": 144.9138730592433,
+        "instrumentation_tax": 0.008059004585876717,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7298561400485993,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 197.8314835682651
+          },
+          "humaneval": {
+            "tps_clean": 179.05985577290443
+          },
+          "mt-bench": {
+            "tps_clean": 91.75476574430343
+          }
+        }
+      },
+      "beam.depth4": {
+        "tps_clean": 111.3501220108356,
+        "tps_instrumented": 110.92630811181517,
+        "instrumentation_tax": 0.003806137715585023,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7456119561357847,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 122.16138370951107
+          },
+          "humaneval": {
+            "tps_clean": 119.99744484726513
+          },
+          "mt-bench": {
+            "tps_clean": 91.42975661068043
+          }
+        }
+      },
+      "bestfirst.ref": {
+        "tps_clean": 22.565591314926476,
+        "tps_instrumented": 22.591155271912477,
+        "instrumentation_tax": -0.0011328733481534847,
+        "dominant_phase": "candidate_build",
+        "dominant_share": 0.8674918696244148,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 37.39261309462488
+          },
+          "humaneval": {
+            "tps_clean": 27.988546321244957
+          },
+          "mt-bench": {
+            "tps_clean": 12.527827892810762
+          }
+        }
+      }
+    },
+    "256": {
+      "beam.geo50": {
+        "tps_clean": 153.21105822643904,
+        "tps_instrumented": 150.9305529938488,
+        "instrumentation_tax": 0.014884729986132883,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7217780683347161,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 204.62994917216707
+          },
+          "humaneval": {
+            "tps_clean": 176.90167632668272
+          },
+          "mt-bench": {
+            "tps_clean": 100.26823098430133
+          }
+        }
+      },
+      "beam.geo60": {
+        "tps_clean": 162.62789220336086,
+        "tps_instrumented": 162.70948552887901,
+        "instrumentation_tax": -0.0005017179059059185,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7112189865994832,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 228.52641811274742
+          },
+          "humaneval": {
+            "tps_clean": 197.26847708331394
+          },
+          "mt-bench": {
+            "tps_clean": 99.58788924975471
+          }
+        }
+      },
+      "beam.geo75": {
+        "tps_clean": 172.87914179548153,
+        "tps_instrumented": 170.4715882367334,
+        "instrumentation_tax": 0.013926223451504072,
+        "dominant_phase": "verify",
+        "dominant_share": 0.696873053403999,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 245.33594119101545
+          },
+          "humaneval": {
+            "tps_clean": 211.36387257608484
+          },
+          "mt-bench": {
+            "tps_clean": 102.45896306982415
+          }
+        }
+      },
+      "beam.flat": {
+        "tps_clean": 175.97756740973742,
+        "tps_instrumented": 176.3648764893698,
+        "instrumentation_tax": -0.002200900292766317,
+        "dominant_phase": "verify",
+        "dominant_share": 0.6937460603302203,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 267.4506159876486
+          },
+          "humaneval": {
+            "tps_clean": 231.55135516037046
+          },
+          "mt-bench": {
+            "tps_clean": 94.42476190146303
+          }
+        }
+      },
+      "beam.invgeo75": {
+        "tps_clean": 136.46036196089347,
+        "tps_instrumented": 134.9924551160813,
+        "instrumentation_tax": 0.010757020014594776,
+        "dominant_phase": "verify",
+        "dominant_share": 0.6989116234429729,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 260.2517648617813
+          },
+          "humaneval": {
+            "tps_clean": 186.8102718065971
+          },
+          "mt-bench": {
+            "tps_clean": 66.55421119781083
+          }
+        }
+      },
+      "beam.invgeo50": {
+        "tps_clean": 132.90634354732356,
+        "tps_instrumented": 136.93925412171535,
+        "instrumentation_tax": -0.030344003655143892,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7227323303865664,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 217.38567518249766
+          },
+          "humaneval": {
+            "tps_clean": 176.3033293727541
+          },
+          "mt-bench": {
+            "tps_clean": 70.33494773337614
+          }
+        }
+      },
+      "beam.depth8": {
+        "tps_clean": 159.9814504806588,
+        "tps_instrumented": 156.7393067598894,
+        "instrumentation_tax": 0.020265747754058316,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7231779654398288,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 203.49408533450247
+          },
+          "humaneval": {
+            "tps_clean": 193.83920771818399
+          },
+          "mt-bench": {
+            "tps_clean": 103.47372033327188
+          }
+        }
+      },
+      "beam.depth4": {
+        "tps_clean": 115.56526474609865,
+        "tps_instrumented": 115.18353174782669,
+        "instrumentation_tax": 0.0033031810995339805,
+        "dominant_phase": "verify",
+        "dominant_share": 0.7396340154257588,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 122.81302481063261
+          },
+          "humaneval": {
+            "tps_clean": 120.6970141781634
+          },
+          "mt-bench": {
+            "tps_clean": 100.41562123411772
+          }
+        }
+      },
+      "bestfirst.ref": {
+        "tps_clean": 10.768099764790344,
+        "tps_instrumented": 10.798103503665441,
+        "instrumentation_tax": -0.002786354095009713,
+        "dominant_phase": "candidate_build",
+        "dominant_share": 0.9428743681450181,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 18.43586637549243
+          },
+          "humaneval": {
+            "tps_clean": 13.2724848610135
+          },
+          "mt-bench": {
+            "tps_clean": 5.805735148216167
+          }
+        }
+      }
+    }
+  },
+  "checks": {
+    "acceptance_match": true,
+    "mismatched_units": []
+  }
+}

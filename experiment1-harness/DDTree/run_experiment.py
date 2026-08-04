@@ -80,20 +80,30 @@ class Method:
     backbone: str                     # key into backbones
     corrector: Optional[str] = None   # corrector name, or None
     verify: str = "tree"              # "tree" | "chain"
+    markov: Optional[str] = None      # chain-only override: "off" disables a dspark
+                                      # backbone's intrinsic head (parallel argmax)
 
 
 # All methods run by default (chain references + the tree matrix).
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
     {"name": "dspark_b7", "model_id": "deepseek-ai/dspark_qwen3_4b_block7", "kind": "dspark"},
+    # Fine-tuned block-16 DSpark from experiment 2 (own jointly-trained markov head).
+    {"name": "dspark_b16", "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16", "kind": "dspark"},
 ]
 DEFAULT_METHODS = [
     {"name": "dflash.chain", "backbone": "dflash_b16", "corrector": None, "verify": "chain"},
+    {"name": "dflash.markov.chain", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "chain"},
     {"name": "dflash.tree", "backbone": "dflash_b16", "corrector": None, "verify": "tree"},
     {"name": "dflash.markov.tree", "backbone": "dflash_b16", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark.nomarkov.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain", "markov": "off"},
     {"name": "dspark.chain", "backbone": "dspark_b7", "corrector": None, "verify": "chain"},
     {"name": "dspark.tree", "backbone": "dspark_b7", "corrector": None, "verify": "tree"},
     {"name": "dspark.markov.tree", "backbone": "dspark_b7", "corrector": "dspark_b7_markov", "verify": "tree"},
+    {"name": "dspark_b16.nomarkov.chain", "backbone": "dspark_b16", "corrector": None, "verify": "chain", "markov": "off"},
+    {"name": "dspark_b16.chain", "backbone": "dspark_b16", "corrector": None, "verify": "chain"},
+    {"name": "dspark_b16.tree", "backbone": "dspark_b16", "corrector": None, "verify": "tree"},
+    {"name": "dspark_b16.markov.tree", "backbone": "dspark_b16", "corrector": "dspark_b16_markov", "verify": "tree"},
 ]
 
 
@@ -115,7 +125,7 @@ def default_config() -> dict:
         "confidence_threshold": 0.0,
         "measure_per_depth": True,
         "measure_corrector_fit": True,
-        "depth_report_limit": 7,  # per-depth / probe reporting horizon
+        "depth_report_limit": 16,  # per-depth / probe reporting horizon (reaches the b16 tree depth)
         "cache_dir": None,        # if set, per-dataset raw results are cached here (resume)
         "force": False,           # ignore cache and recompute
     }
@@ -228,22 +238,26 @@ def build_correctors(backbones: dict) -> dict:
 #   Corrector "dspark_b7_markov" = that dspark_b7 head, token-only (bias = W2 @ W1[prev]),
 #   so it can be spliced onto EITHER backbone.
 #
-# | method              | backbone   | drafter indexing        | markov head            | corrector slot     | verify | tree_budget | temp |
-# |---------------------|------------|-------------------------|------------------------|--------------------|--------|-------------|------|
-# | dflash.chain        | dflash_b16 | in-place, 15 drafts     | OFF (none)             | none (disallowed)  | chain  | n/a         | 0.0  |
-# | dflash.tree         | dflash_b16 | in-place, depth<=15     | OFF (none)             | None               | tree   | 64          | 0.0  |
-# | dflash.markov.tree  | dflash_b16 | in-place, depth<=15     | ON (FOREIGN dspark_b7) | dspark_b7_markov   | tree   | 64          | 0.0  |
-# | dspark.chain        | dspark_b7  | next-token, 7 drafts    | ON (NATIVE, intrinsic) | none (n/a)         | chain  | n/a         | 0.0  |
-# | dspark.tree         | dspark_b7  | next-token, depth<=7    | OFF (none)             | None               | tree   | 64          | 0.0  |
-# | dspark.markov.tree  | dspark_b7  | next-token, depth<=7    | ON (NATIVE dspark_b7)  | dspark_b7_markov   | tree   | 64          | 0.0  |
+# | method                | backbone   | drafter indexing        | markov head            | corrector slot     | verify | tree_budget | temp |
+# |-----------------------|------------|-------------------------|------------------------|--------------------|--------|-------------|------|
+# | dflash.chain          | dflash_b16 | in-place, 15 drafts     | OFF (none)             | None               | chain  | n/a         | 0.0  |
+# | dflash.markov.chain   | dflash_b16 | in-place, 15 drafts     | ON (FOREIGN dspark_b7) | dspark_b7_markov   | chain  | n/a         | 0.0  |
+# | dflash.tree           | dflash_b16 | in-place, depth<=15     | OFF (none)             | None               | tree   | 64          | 0.0  |
+# | dflash.markov.tree    | dflash_b16 | in-place, depth<=15     | ON (FOREIGN dspark_b7) | dspark_b7_markov   | tree   | 64          | 0.0  |
+# | dspark.nomarkov.chain | dspark_b7  | next-token, 7 drafts    | OFF (markov="off")     | none (disallowed)  | chain  | n/a         | 0.0  |
+# | dspark.chain          | dspark_b7  | next-token, 7 drafts    | ON (NATIVE, intrinsic) | none (disallowed)  | chain  | n/a         | 0.0  |
+# | dspark.tree           | dspark_b7  | next-token, depth<=7    | OFF (none)             | None               | tree   | 64          | 0.0  |
+# | dspark.markov.tree    | dspark_b7  | next-token, depth<=7    | ON (NATIVE dspark_b7)  | dspark_b7_markov   | tree   | 64          | 0.0  |
+#   (dspark_b16.* mirror the dspark_b7 rows at block_size 16 with the b16 head.)
 #
 # markov head column: OFF = raw backbone logits (per-depth-independent tree, or
 #   parallel argmax chain). ON/NATIVE = the dspark_b7 head on its own backbone.
 #   ON/FOREIGN = the dspark_b7 head spliced onto the DFlash backbone it was NOT
 #   trained on (the negative-transfer control). "intrinsic" = applied inside
 #   dspark_generate, not via the corrector slot.
-# corrector slot: the `corrector` value in the method spec. dflash.chain forbids it
-#   (dflash_generate has no corrector); dspark.chain ignores it (the head is intrinsic).
+# corrector slot: the `corrector` value in the method spec. On a dflash chain it is
+#   swept serially over the block (dflash.markov.chain); dspark chains forbid it
+#   (their head is intrinsic -- use markov="off" to ablate it instead).
 # tree_budget/temperature come from cfg (defaults 64 / 0.0). confidence_threshold
 #   defaults 0.0, so dspark.chain's confidence-truncation head is inactive (never
 #   truncates the 7-token proposal). The corrector-fit probe (probe_corrector =
@@ -279,18 +293,28 @@ def build_method_callable(
             raise ValueError(f"method {method.name!r}: unknown corrector {method.corrector!r}")
         corrector_head = correctors[method.corrector]
 
+    if method.markov is not None and (
+        method.markov != "off" or method.verify != "chain" or bb.kind != "dspark"
+    ):
+        raise ValueError(f"{method.name}: markov={method.markov!r} only supports 'off' on a dspark chain")
+
     if method.verify == "chain":
         if bb.kind == "dflash":
-            if corrector_head is not None:
-                raise ValueError(f"{method.name}: dflash chain has no corrector slot")
+            # corrector, if set, is swept serially over the chain block (the chain
+            # analogue of markov.tree; foreign head unless dflash grows its own).
             return lambda ids: dflash_generate(
                 model=model, target=target, input_ids=ids,
-                mask_token_id=model.mask_token_id, block_size=bs, **common,
+                mask_token_id=model.mask_token_id, block_size=bs,
+                markov_head=corrector_head, **common,
             )
-        # dspark chain uses its own markov head intrinsically.
+        # dspark chain uses its own markov head intrinsically; markov="off" ablates
+        # it (parallel argmax over the backbone logits, DFlash-style).
+        if corrector_head is not None:
+            raise ValueError(f"{method.name}: dspark chain's head is intrinsic; corrector slot unsupported")
         return lambda ids: dspark_generate(
             model=model, target=target, input_ids=ids, block_size=bs,
-            confidence_threshold=cfg["confidence_threshold"], **common,
+            confidence_threshold=cfg["confidence_threshold"],
+            use_markov=(method.markov != "off"), **common,
         )
 
     if method.verify == "tree":

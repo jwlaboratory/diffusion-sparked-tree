@@ -48,6 +48,86 @@ from ddtree import (
 SPARKED_TREE_STAGE_ORDER = ("draft", "tree_build", "tree_compile", "verify", "walk_accept", "kv_update", "state_carry")
 
 
+# --------------------------------------------------------------------------- #
+# Width schedules (beam mode). A schedule decides, IN ADVANCE, how many nodes  #
+# each depth gets -- that is what makes level-synchronous expansion possible.  #
+# --------------------------------------------------------------------------- #
+
+# A flat schedule is only meaningful while every depth it covers gets more than
+# one slot; below that it silently degenerates into a chain (see the docstring).
+FLAT_MIN_WIDTH = 2
+
+
+def flat_width_schedule(budget: int, depth_limit: int, min_width: int = FLAT_MIN_WIDTH) -> list[int]:
+    """Uniform width per depth, over as many depths as the budget can afford to branch.
+
+    Spreading has a floor: dividing a budget of 16 over 16 depths returns
+    [1,1,...,1] -- a chain with zero branching, strictly worse than the same 16
+    nodes spent on a shallower tree. Depth is therefore capped at
+    budget // min_width rather than fixed at the drafter's horizon."""
+    budget, depth_limit = int(budget), int(depth_limit)
+    if budget <= 0 or depth_limit <= 0:
+        return []
+    depth = max(1, min(depth_limit, budget // max(int(min_width), 1)))
+    base, extra = divmod(budget, depth)
+    return [base + (1 if i < extra else 0) for i in range(depth)]
+
+
+def flat_depth_schedule(budget: int, depth: int, depth_limit: int) -> list[int]:
+    """Uniform width over a FIXED number of depths: trades depth for width while
+    always spending the full budget (unlike fixing the width, which strands
+    budget once depth_limit clamps)."""
+    budget = int(budget)
+    if budget <= 0 or depth_limit <= 0:
+        return []
+    depth = max(1, min(int(depth), int(depth_limit), budget))
+    base, extra = divmod(budget, depth)
+    return [base + (1 if i < extra else 0) for i in range(depth)]
+
+
+def geometric_width_schedule(budget: int, depth_limit: int, decay: float = 0.6) -> list[int]:
+    """Front-loaded: wide near the root, narrowing by `decay` per depth. This is
+    the intuitive allocation (hedge early, deep nodes are rarely reached) and the
+    one the old experiments measured to be backwards. Sums to <= budget."""
+    widths: list[int] = []
+    remaining = int(budget)
+    width = max(1.0, budget * (1.0 - decay))
+    for _ in range(int(depth_limit)):
+        if remaining <= 0:
+            break
+        w = max(1, min(remaining, int(round(width))))
+        widths.append(w)
+        remaining -= w
+        width *= decay
+    return widths
+
+
+def resolve_width_schedule(spec: dict, budget: int, depth_limit: int) -> list[int]:
+    """Schedule spec -> per-depth widths. Kinds:
+
+      {"kind": "flat", "min_width": 2}         uniform over affordable depths
+      {"kind": "flat_depth", "depth": 8}       uniform over exactly `depth` levels
+      {"kind": "geometric", "decay": 0.6}      front-loaded (decaying)
+      {"kind": "inv_geometric", "decay": 0.6}  back-loaded: the geometric widths
+                                               reversed -- same multiset of widths,
+                                               same depth extent, opposite
+                                               orientation (the clean mirror control)
+      {"kind": "explicit", "widths": [...]}    verbatim
+    """
+    kind = spec.get("kind", "flat")
+    if kind == "flat":
+        return flat_width_schedule(budget, depth_limit, spec.get("min_width", FLAT_MIN_WIDTH))
+    if kind == "flat_depth":
+        return flat_depth_schedule(budget, spec["depth"], depth_limit)
+    if kind == "geometric":
+        return geometric_width_schedule(budget, depth_limit, spec.get("decay", 0.6))
+    if kind == "inv_geometric":
+        return list(reversed(geometric_width_schedule(budget, depth_limit, spec.get("decay", 0.6))))
+    if kind == "explicit":
+        return [int(w) for w in spec["widths"]]
+    raise ValueError(f"unknown width schedule kind {kind!r}")
+
+
 def build_sparked_tree(
     base_logits: torch.Tensor,
     markov_head,
@@ -171,6 +251,149 @@ def build_sparked_tree(
     return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
 
 
+def build_beam_tree(
+    base_logits: torch.Tensor,
+    markov_head,
+    root_token_id: int,
+    widths: list[int],
+    candidates: int = 2048,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor, dict[str, float]]:
+    """Level-synchronous (beam) markov tree -- one batched expansion per DEPTH.
+
+    build_sparked_tree expands one node at a time, and each expansion needs the
+    markov rerun conditioned on that node's token: the table for node n+1 is not
+    known until node n is popped, so the builder pays ~budget dependent
+    round-trips per round. That serial dependency -- not arithmetic -- is what
+    made the naive tree ~20x more expensive than DDTree's.
+
+    Fixing the tree SHAPE up front removes it. `widths[d]` nodes at depth d+1 are
+    decided in advance; each level expands ALL its surviving parents in one
+    batched matmul (bias = W1[parents] @ W2_active^T), takes a single top-k over
+    [parents x candidates], and the winners stay on GPU as the next level's
+    parents. Every transfer is deferred to a single .cpu() at the end: 1 sync per
+    round instead of ~budget.
+
+    The cost is that budget is allocated by the fixed schedule rather than
+    adaptively by path score (beam search, not best-first) -- which is exactly
+    the knob the width-schedule experiment sweeps.
+
+    Candidate restriction: only the union of the per-depth top-`candidates`
+    tokens can ever win a slot (bias magnitudes are small relative to the logit
+    spread), so W2 is gathered once against that union and each level's matmul
+    runs on the ~C-column slice instead of the full vocab. candidates=0 disables.
+    """
+    build_subtimes = empty_stage_times(DDTREE_TREE_BUILD_STAGE_ORDER)
+
+    depth_limit = int(base_logits.shape[0])
+    widths = [int(w) for w in list(widths)[:depth_limit] if int(w) > 0]
+    if not widths or depth_limit == 0:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
+            [-1],
+            [dict()],
+            visibility,
+            build_subtimes,
+        )
+
+    prep_start = cuda_time()
+    logits = base_logits.float()
+    device = logits.device
+    vocab_size = int(logits.shape[-1])
+    w1 = w2_active = None
+    if markov_head is not None:
+        w1 = markov_head.markov_w1.weight.detach().float()   # [vocab, rank]
+        w2 = markov_head.markov_w2.weight.detach().float()   # [vocab, rank]
+    if candidates and candidates < vocab_size:
+        cand_ids = torch.unique(
+            torch.topk(logits, k=min(int(candidates), vocab_size), dim=-1).indices.reshape(-1)
+        )
+        logits_active = logits.index_select(1, cand_ids)     # [L, U]
+        if markov_head is not None:
+            w2_active = w2.index_select(0, cand_ids)         # [U, rank]
+    else:
+        cand_ids = None
+        logits_active = logits
+        if markov_head is not None:
+            w2_active = w2
+    active_vocab = int(logits_active.shape[-1])
+    build_subtimes["tree_build_copy"] = cuda_time() - prep_start
+
+    loop_start = cuda_time()
+    parent_tokens = torch.tensor([int(root_token_id)], dtype=torch.long, device=device)
+    parent_scores = torch.zeros(1, dtype=torch.float32, device=device)
+    level_parents, level_tokens, emitted = [], [], []
+    for depth_idx, width in enumerate(widths):
+        if w2_active is not None:
+            bias = w1.index_select(0, parent_tokens) @ w2_active.T           # [P, U]
+            corrected = logits_active[depth_idx].unsqueeze(0) + bias
+        else:
+            # No corrector: every parent shares the depth's base distribution.
+            corrected = logits_active[depth_idx].unsqueeze(0).expand(parent_tokens.shape[0], -1)
+        log_probs = corrected - torch.logsumexp(corrected, dim=-1, keepdim=True)
+        path_scores = parent_scores.unsqueeze(1) + log_probs                 # [P, U]
+
+        flat_scores = path_scores.reshape(-1)
+        k = min(int(width), int(flat_scores.numel()))
+        top_vals, top_flat = torch.topk(flat_scores, k)
+        parent_local = torch.div(top_flat, active_vocab, rounding_mode="floor")
+        token_local = top_flat % active_vocab
+        token_ids = token_local if cand_ids is None else cand_ids.index_select(0, token_local)
+
+        level_parents.append(parent_local)
+        level_tokens.append(token_ids)
+        emitted.append(k)
+        parent_tokens = token_ids            # stays on GPU -- no sync
+        parent_scores = top_vals
+    # ONE transfer for the whole tree (this is the builder's only sync point).
+    packed = torch.stack([torch.cat(level_parents), torch.cat(level_tokens)]).cpu().numpy()
+    build_subtimes["tree_build_heap"] = cuda_time() - loop_start
+
+    tail_start = time.perf_counter()
+    parent_local_np, token_np = packed[0], packed[1]
+    total = int(parent_local_np.shape[0])
+    node_token_ids_np = np.empty(total, dtype=np.int64)
+    node_depths_np = np.empty(total, dtype=np.int64)
+    parents_np = np.empty(total + 1, dtype=np.int32)
+    parents_np[0] = -1
+    child_maps: list[dict[int, int]] = [dict()]
+
+    node_count, prev_global, offset = 0, [0], 0
+    for depth_idx, width in enumerate(emitted):
+        for i in range(width):
+            parent_index = prev_global[int(parent_local_np[offset + i])]
+            token_id = int(token_np[offset + i])
+            current_index = node_count + 1
+            node_token_ids_np[node_count] = token_id
+            node_depths_np[node_count] = depth_idx + 1
+            parents_np[current_index] = parent_index
+            child_maps.append(dict())
+            child_maps[parent_index][token_id] = current_index
+            node_count += 1
+        prev_global = list(range(node_count - width + 1, node_count + 1))
+        offset += width
+
+    current_length = 1 + node_count
+    visibility_np = np.zeros((current_length, current_length), dtype=np.bool_)
+    visibility_np[0, 0] = True
+    for index in range(1, current_length):
+        parent_index = int(parents_np[index])
+        visibility_np[index, :index] = visibility_np[parent_index, :index]
+        visibility_np[index, index] = True
+    build_subtimes["tree_build_visibility"] = time.perf_counter() - tail_start
+
+    return (
+        torch.from_numpy(node_token_ids_np[:node_count]),
+        torch.from_numpy(node_depths_np[:node_count]),
+        parents_np[:current_length].tolist(),
+        child_maps,
+        torch.from_numpy(visibility_np),
+        build_subtimes,
+    )
+
+
 @torch.inference_mode()
 def sparked_tree_generate(
     model,
@@ -184,6 +407,9 @@ def sparked_tree_generate(
     tree_budget: int | None = None,
     markov_head=None,
     draft_mode: str = "dspark",
+    tree_mode: str = "best-first",
+    beam_schedule: dict | None = None,
+    beam_candidates: int = 2048,
     probe_markov_head=None,
     save_tree_traces: bool = False,
 ) -> SimpleNamespace:
@@ -197,6 +423,16 @@ def sparked_tree_generate(
     markov_head: the DSpark markov head to use as the per-step corrector, or None
       for a per-depth-independent tree. It is token-only, so it can be spliced onto
       either backbone.
+    tree_mode:
+      "best-first" - the naive per-node builder (build_sparked_tree), adaptive
+                     budget allocation, ~budget markov reruns per round.
+      "beam"       - level-synchronous builder (build_beam_tree): tree shape fixed
+                     up front by `beam_schedule`, one batched expansion per depth.
+    beam_schedule: width-schedule spec for tree_mode="beam"; see
+      resolve_width_schedule. Defaults to {"kind": "flat"}. Resolved once per
+      generate call from (tree_budget, depth_limit).
+    beam_candidates: candidate-union restriction for the beam builder (0 = full
+      vocab).
     probe_markov_head: measurement-only. When set (typically on a *no-corrector*
       run), we record, at each committed position along the accepted path, whether
       argmax(base_logits) and argmax(base_logits + bias(prev)) match the target's
@@ -207,6 +443,8 @@ def sparked_tree_generate(
     """
     if draft_mode not in ("dspark", "dflash"):
         raise ValueError(f"draft_mode must be 'dspark' or 'dflash', got {draft_mode!r}")
+    if tree_mode not in ("best-first", "beam"):
+        raise ValueError(f"tree_mode must be 'best-first' or 'beam', got {tree_mode!r}")
     num_input_tokens = input_ids.shape[1]
     max_length = num_input_tokens + max_new_tokens
     # DSpark is next-token (block_size drafts, tree up to block_size deep); DFlash is
@@ -215,6 +453,17 @@ def sparked_tree_generate(
     depth_limit = block_size if draft_mode == "dspark" else block_size - 1
     tree_budget = depth_limit if tree_budget is None else max(tree_budget, 0)
     max_tree_nodes = 1 + tree_budget
+
+    # Beam widths are a pure function of (schedule, budget, depth_limit); resolve
+    # once, reuse every round. The emitted node count is sum(widths) <= budget.
+    beam_widths = None
+    if tree_mode == "beam":
+        beam_widths = resolve_width_schedule(
+            beam_schedule or {"kind": "flat"}, tree_budget, depth_limit)
+        if sum(beam_widths) > tree_budget:
+            raise ValueError(
+                f"beam schedule {beam_schedule!r} spends {sum(beam_widths)} nodes "
+                f"on a budget of {tree_budget}")
 
     output_ids = torch.full(
         (1, max_length + max_tree_nodes),
@@ -311,14 +560,23 @@ def sparked_tree_generate(
         if not is_cold:
             stage_times["draft"] += cuda_time() - draft_stage_start
 
-        # Tree build: markov-conditioned best-first expansion (the rerun happens here).
+        # Tree build: markov-conditioned expansion (the rerun happens here).
         tree_build_start = cuda_time()
-        node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree(
-            base_draft_logits[0],
-            markov_head,
-            int(root_token[0, 0]),
-            tree_budget,
-        )
+        if tree_mode == "beam":
+            node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_beam_tree(
+                base_draft_logits[0],
+                markov_head,
+                int(root_token[0, 0]),
+                beam_widths,
+                beam_candidates,
+            )
+        else:
+            node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree(
+                base_draft_logits[0],
+                markov_head,
+                int(root_token[0, 0]),
+                tree_budget,
+            )
         if not is_cold:
             stage_times["tree_build"] += cuda_time() - tree_build_start
             for stage_name, stage_elapsed in tree_build_subtimes.items():
