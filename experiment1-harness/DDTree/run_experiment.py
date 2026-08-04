@@ -97,8 +97,12 @@ DEFAULT_METHODS = [
 ]
 
 
+CODE_VERSION = "v2-detail"  # bump when the captured/raw schema changes (invalidates cache)
+
+
 def default_config() -> dict:
     return {
+        "code_version": CODE_VERSION,
         "target": "Qwen/Qwen3-4B",
         "backbones": DEFAULT_BACKBONES,
         "methods": DEFAULT_METHODS,
@@ -301,16 +305,25 @@ def load_context(cfg: dict, device) -> dict:
 
 
 def run_one_dataset_raw(ctx: dict, cfg: dict, dataset_name: str, max_samples) -> dict:
-    """Run every method on one dataset; return JSON-serializable raw results.
+    """Run every method on one dataset; return JSON-serializable raw results with
+    enough detail to make good charts later (distributions, timing, stages).
 
-    raw = {"n": int, "methods": {name: {"lengths": [...], "probe": {depth: {...}}}}}
-    This is the checkpoint unit written to the cache and merged by aggregate.py."""
+    raw = {"n": int, "methods": {name: {
+        "lengths":     [int, ...],          # every round's acceptance length (flat)
+        "per_sample":  [{"acc": [...], "n_out", "rounds", "tpot", "ttft", "proposal"?}],
+        "stage_times": {stage: seconds},    # summed across samples
+        "probe":       {depth: {...}},      # corrector-fit sums (tree runs)
+    }}}
+    lengths + probe are what aggregate.build_summary consumes; the rest is extra
+    detail preserved for charting. This dict is the checkpoint/cache unit."""
     tokenizer, methods, method_fns = ctx["tokenizer"], ctx["methods"], ctx["method_fns"]
     dataset = load_and_process_dataset(dataset_name)
     if max_samples is not None and len(dataset) > max_samples:
         dataset = dataset.shuffle(seed=cfg["seed"]).select(range(max_samples))
 
     lengths = {m.name: [] for m in methods}
+    per_sample = {m.name: [] for m in methods}
+    stage_times = {m.name: {} for m in methods}
     probes: dict = {}
     for row in dataset:
         text = tokenizer.apply_chat_template(
@@ -319,16 +332,38 @@ def run_one_dataset_raw(ctx: dict, cfg: dict, dataset_name: str, max_samples) ->
         )
         input_ids = tokenizer.encode(text, return_tensors="pt").to(ctx["device"])
         for m in methods:
-            result = method_fns[m.name](input_ids)
-            lengths[m.name].extend(result.acceptance_lengths)
-            probe = getattr(result, "probe_by_depth", None)
+            r = method_fns[m.name](input_ids)
+            acc = [int(a) for a in r.acceptance_lengths]
+            lengths[m.name].extend(acc)
+            rec = {
+                "acc": acc,
+                "n_out": int(getattr(r, "num_output_tokens", 0)),
+                "rounds": int(getattr(r, "decode_rounds", len(acc))),
+                "tpot": float(getattr(r, "time_per_output_token", 0.0)),
+                "ttft": float(getattr(r, "time_to_first_token", 0.0)),
+            }
+            prop = getattr(r, "proposal_lengths", None)
+            if prop is not None:
+                rec["proposal"] = [int(p) for p in prop]
+            per_sample[m.name].append(rec)
+            st = getattr(r, "stage_times", None)
+            if st:
+                agg = stage_times[m.name]
+                for k, v in st.items():
+                    agg[k] = agg.get(k, 0.0) + float(v)
+            probe = getattr(r, "probe_by_depth", None)
             if probe:
                 aggregate.merge_probe(probes.setdefault(m.name, {}), probe)
 
     return {
         "n": len(dataset),
         "methods": {
-            m.name: {"lengths": lengths[m.name], "probe": probes.get(m.name, {})}
+            m.name: {
+                "lengths": lengths[m.name],
+                "per_sample": per_sample[m.name],
+                "stage_times": stage_times[m.name],
+                "probe": probes.get(m.name, {}),
+            }
             for m in methods
         },
     }

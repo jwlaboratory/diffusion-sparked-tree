@@ -1,0 +1,86 @@
+{
+  "fingerprint": "676aff28f4c4",
+  "cfg": {
+    "code_version": "v2-detail",
+    "target": "Qwen/Qwen3-4B",
+    "backbones": [
+      {
+        "name": "dflash_b16",
+        "model_id": "z-lab/Qwen3-4B-DFlash-b16",
+        "kind": "dflash"
+      },
+      {
+        "name": "dspark_b7",
+        "model_id": "deepseek-ai/dspark_qwen3_4b_block7",
+        "kind": "dspark"
+      }
+    ],
+    "methods": [
+      {
+        "name": "dflash.chain",
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "chain"
+      },
+      {
+        "name": "dflash.tree",
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "tree"
+      },
+      {
+        "name": "dflash.markov.tree",
+        "backbone": "dflash_b16",
+        "corrector": "dspark_b7_markov",
+        "verify": "tree"
+      },
+      {
+        "name": "dspark.chain",
+        "backbone": "dspark_b7",
+        "corrector": null,
+        "verify": "chain"
+      },
+      {
+        "name": "dspark.tree",
+        "backbone": "dspark_b7",
+        "corrector": null,
+        "verify": "tree"
+      },
+      {
+        "name": "dspark.markov.tree",
+        "backbone": "dspark_b7",
+        "corrector": "dspark_b7_markov",
+        "verify": "tree"
+      }
+    ],
+    "probe_corrector": "dspark_b7_markov",
+    "tasks": [
+      [
+        "gsm8k",
+        8
+      ],
+      [
+        "humaneval",
+        8
+      ],
+      [
+        "mt-bench",
+        8
+      ]
+    ],
+    "tree_budget": 64,
+    "temperature": 0.0,
+    "max_new_tokens": 512,
+    "seed": 0,
+    "confidence_threshold": 0.0,
+    "measure_per_depth": true,
+    "measure_corrector_fit": true,
+    "depth_report_limit": 7,
+    "force": false
+  },
+  "cache_files": [
+    "cache/676aff28f4c4/gsm8k__n8.json",
+    "cache/676aff28f4c4/humaneval__n8.json",
+    "cache/676aff28f4c4/mt-bench__n8.json"
+  ]
+}

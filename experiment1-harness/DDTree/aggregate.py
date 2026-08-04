@@ -21,9 +21,11 @@ import hashlib
 import json
 from statistics import mean
 
-# cfg keys that change the numbers -> the checkpoint fingerprint.
+# cfg keys that change the numbers -> the checkpoint fingerprint. Includes
+# "code_version" so a change to the harness LOGIC (not just config) invalidates
+# stale caches -- bump cfg["code_version"] whenever the captured data changes.
 FINGERPRINT_KEYS = (
-    "target", "backbones", "methods", "tree_budget", "temperature",
+    "code_version", "target", "backbones", "methods", "tree_budget", "temperature",
     "max_new_tokens", "seed", "probe_corrector", "measure_corrector_fit",
     "measure_per_depth", "depth_report_limit",
 )
