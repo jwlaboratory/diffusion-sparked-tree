@@ -38,6 +38,7 @@ Usage:
 """
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -63,6 +64,15 @@ ARM_COLOR = {
 # two tree arms. Charts filter this to whatever is actually present.
 ARM_ORDER = ["dflash.chain", "dspark_b7.chain", "ddtree", "dspark_b16.markov.tree"]
 FALLBACK_ARM = "#8a8a8a"
+
+# Presentation names for the tps ("Decode speeds") chart x-axis; every other chart keeps
+# the raw arm ids.
+TPS_ARM_NAME = {
+    "dflash.chain":           "DFlash",
+    "dspark_b7.chain":        "DSpark",
+    "ddtree":                 "DDTree",
+    "dspark_b16.markov.tree": "SparklingTree_b16",
+}
 
 # Canonical phase set, used only if config.phase_order is absent (it should not be).
 CANON_PHASES = ["draft_forward", "candidate_build", "candidate_pack", "verify",
@@ -246,9 +256,9 @@ def chart_tps(summary, out):
     bar-top and marker *is* the instrumentation tax, shown rather than hidden. Chain
     arms are budget-invariant -- their bar is identical across panels -- so they are
     labeled `(budget-invariant)` to stop the repetition reading as two measurements."""
-    budgets = _budgets(summary)
+    budgets = [b for b in _budgets(summary) if b == "64"]
     if not budgets:
-        print("chart_tps: no budgets in summary; skipping")
+        print("chart_tps: tree budget 64 not in summary; skipping")
         return
     inv = _budget_invariant_arms(summary)
 
@@ -273,45 +283,26 @@ def chart_tps(summary, out):
         xs = list(range(len(arms)))
         for x, arm in zip(xs, arms):
             clean = _arm_tps(summary, "clean", bk, arm)
-            instr = _arm_tps(summary, "instrumented", bk, arm)
             if clean is None:
                 print(f"chart_tps: {arm} @ budget {bk} missing clean tps; skipping bar")
                 continue
             col = _arm_color(arm)
             ax.bar(x, clean, width=0.66, color=col, edgecolor=SURFACE, linewidth=1.5,
-                   hatch=("////" if _is_chain(arm) else None), zorder=3)
+                   zorder=3)
             ax.text(x, clean + ymax * 0.015, f"{clean:.0f}", ha="center", va="bottom",
                     fontsize=9, color=INK2)
-            if instr is not None:
-                # Hollow marker = instrumented throughput; the drop from the bar top is
-                # the instrumentation tax for this arm.
-                ax.scatter([x], [instr], s=90, facecolor="none", edgecolor=INK,
-                           linewidth=1.6, zorder=4)
         _style(ax)
         ax.set_ylim(0, ymax * 1.15)
         ax.set_xticks(xs)
-        ax.set_xticklabels(
-            [a + ("\n(budget-invariant)" if a in inv else "") for a in arms],
-            fontsize=9, rotation=0)
+        ax.set_xticklabels([TPS_ARM_NAME.get(a, a) for a in arms],
+                           fontsize=9, rotation=0)
         if panel == 0:
             ax.set_ylabel("net decode throughput (output tokens / sec)")
         ax.set_title(f"tree budget {bk}", fontsize=12, fontweight="bold", loc="left")
 
-    # One legend for the whole figure: the hollow-marker convention + the texture split.
-    handles = [
-        Line2D([0], [0], marker="o", linestyle="none", markersize=9,
-               markerfacecolor="none", markeredgecolor=INK, label="instrumented pass (timers on)"),
-        Patch(facecolor="#b9b9b9", edgecolor=SURFACE, hatch="////", label="chain arm"),
-        Patch(facecolor="#b9b9b9", edgecolor=SURFACE, label="tree arm"),
-    ]
-    fig.legend(handles=handles, frameon=False, fontsize=9, ncol=3, loc="lower center",
-               bbox_to_anchor=(0.5, 0.04))
-    fig.suptitle("Net decode throughput by arm and tree budget (clean pass)",
+    fig.suptitle("Decode speeds",
                  fontsize=13.5, fontweight="bold", x=0.01, ha="left")
-    _caption(fig, "Bar = clean-pass throughput (timers off). Hollow marker = instrumented-pass "
-                  "throughput; the gap is that arm's instrumentation tax. Chain arms are "
-                  "budget-invariant, so their bars repeat across panels by construction.")
-    fig.tight_layout(rect=[0, 0.11, 1, 0.96])
+    fig.tight_layout(rect=[0, 0.02, 1, 0.96])
     fig.savefig(out, dpi=150)
     plt.close(fig)
     print(f"wrote {out}")
@@ -511,6 +502,102 @@ def chart_tree_cost_scaling(summary, out):
     print(f"wrote {out}")
 
 
+# The pies show only the phases the experiment's question is about; everything else
+# (pack, walk, KV, carry, unaccounted -- <=4% on every arm) folds into one gray slice.
+PIE_MAIN_PHASES = ["draft_forward", "candidate_build", "verify"]
+PIE_OTHER_LABEL = "everything else"
+PIE_OTHER_COLOR = "#b5b4b0"
+# Short presentation names, pie chart only; every other chart keeps the arm ids.
+PIE_ARM_NAME = {
+    "dflash.chain": "dflash",
+    "dspark_b7.chain": "dspark",
+    "ddtree": "ddtree",
+    "dspark_b16.markov.tree": "SparklingTree_b16",
+}
+
+
+def chart_phase_pies(summary, out, budget="64"):
+    """Four side-by-side pies, one per arm, phase shares at a single tree budget.
+
+    Same data as one panel of phase_share.png, re-cut as part-to-whole per arm and
+    simplified: only draft_forward / candidate_build / verify keep their own slice (they
+    are the experiment's question); the five bookkeeping phases merge into a single gray
+    `everything else` slice. Slices >= 3% carry a direct percentage label; the dominant
+    slice is also named."""
+    cfg = summary.get("config") or {}
+    phase_order = cfg.get("phase_order") or CANON_PHASES
+    pcolor = _phase_colors(phase_order)
+    pcolor[PIE_OTHER_LABEL] = PIE_OTHER_COLOR
+    if budget not in _budgets(summary):
+        print(f"chart_phase_pies: budget {budget} not in summary; skipping")
+        return
+    arms = _present_arms(summary, budget, "instrumented")
+    if not arms:
+        print(f"chart_phase_pies: no arms at budget {budget}; skipping")
+        return
+
+    fig, axes = plt.subplots(1, len(arms), figsize=(4.4 * len(arms), 5.4), squeeze=False)
+    axes = axes[0]
+    for ax, arm in zip(axes, arms):
+        shares, _na, ok = _phase_shares(summary, budget, arm, phase_order)
+        spt, _na2, spt_ok = _rescaled_spt(summary, budget, arm, phase_order)
+        if not ok:
+            ax.axis("off")
+            print(f"chart_phase_pies: {arm} @ budget {budget} has no instrumented phases")
+            continue
+        merged = {p: shares[p] for p in PIE_MAIN_PHASES if p in shares}
+        other = sum(v for p, v in shares.items() if p not in PIE_MAIN_PHASES)
+        if other > 0:
+            merged[PIE_OTHER_LABEL] = other
+        merged_ms = {p: spt.get(p, 0.0) * 1000 for p in PIE_MAIN_PHASES} if spt_ok else {}
+        if spt_ok:
+            merged_ms[PIE_OTHER_LABEL] = sum(
+                v * 1000 for p, v in spt.items() if p not in PIE_MAIN_PHASES)
+        phases = [p for p in PIE_MAIN_PHASES + [PIE_OTHER_LABEL] if p in merged]
+        vals = [merged[p] for p in phases]
+        wedges, _texts, autotexts = ax.pie(
+            vals, colors=[pcolor[p] for p in phases], startangle=90,
+            counterclock=False, autopct=lambda pct: f"{pct:.0f}%" if pct >= 3 else "",
+            pctdistance=0.7, wedgeprops={"edgecolor": SURFACE, "linewidth": 1.5},
+        )
+        for w, t, p, v in zip(wedges, autotexts, phases, vals):
+            if t.get_text() and spt_ok:
+                t.set_text(f"{t.get_text()}\n{merged_ms[p]:.1f} ms/tok")
+            if v < 0.10 and t.get_text():
+                # Small labeled slices move outside the pie, else they pile up on
+                # their neighbors' labels near the crowded top of the circle.
+                mid = math.radians((w.theta1 + w.theta2) / 2)
+                t.set_position((1.22 * math.cos(mid), 1.22 * math.sin(mid)))
+                t.set_ha("left" if math.cos(mid) >= 0 else "right")
+                t.set_color(INK)
+            else:
+                r, g, b, _ = w.get_facecolor()
+                lum = 0.299 * r + 0.587 * g + 0.114 * b
+                t.set_color(SURFACE if lum < 0.5 else INK)
+            t.set_fontsize(9.5)
+        # Direct-label the dominant slice with its phase name, not just a percent.
+        top = max(phases, key=lambda p: merged[p])
+        ang = 90 - 360 * (sum(merged[p] for p in phases[:phases.index(top)]) + merged[top] / 2)
+        ax.annotate(top, xy=(0.78 * math.cos(math.radians(ang)),
+                             0.78 * math.sin(math.radians(ang))),
+                    xytext=(1.25 * math.cos(math.radians(ang)),
+                            1.25 * math.sin(math.radians(ang))),
+                    ha="center", va="center", fontsize=9, color=INK,
+                    arrowprops={"arrowstyle": "-", "color": INK2, "linewidth": 1})
+        ax.set_title(PIE_ARM_NAME.get(arm, arm) + "\n", fontsize=11, fontweight="bold")
+
+    handles = [Patch(facecolor=pcolor[p], edgecolor=SURFACE, label=p)
+               for p in PIE_MAIN_PHASES + [PIE_OTHER_LABEL]]
+    fig.legend(handles=handles, frameon=False, fontsize=9, ncol=4,
+               loc="lower center", bbox_to_anchor=(0.5, 0.04))
+    fig.suptitle(f"Phase shares of decode wall clock, tree budget {budget}",
+                 fontsize=13.5, fontweight="bold", x=0.01, ha="left")
+    fig.tight_layout(rect=[0, 0.10, 1, 0.92])
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print(f"wrote {out}")
+
+
 def main():
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "summary.json"
     summary = json.loads(Path(path).read_text())
@@ -519,6 +606,7 @@ def main():
     chart_phase_breakdown(summary, outdir / "phase_breakdown.png")
     chart_phase_share(summary, outdir / "phase_share.png")
     chart_tree_cost_scaling(summary, outdir / "tree_cost_scaling.png")
+    chart_phase_pies(summary, outdir / "phase_pies_b64.png", budget="64")
 
 
 if __name__ == "__main__":

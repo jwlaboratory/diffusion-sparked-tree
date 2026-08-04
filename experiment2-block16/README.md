@@ -1,5 +1,18 @@
 # Experiment 2 — block-16 DSpark (exact settings)
 
+> **Experiment 2b (data scaling, 2026-08-04): more training data does NOT raise
+> acceptance.** Three arms sharing the `_best` recipe exactly (seq 768, 32
+> anchors, γ=4, batch 32, lr 1e-4), varying only PerfectBlend rows with steps
+> epoch-matched at ~5: 2,400/360 vs 10,000/1,500 vs 24,000/3,600. Pooled mean
+> acceptance: 7.67 / 7.60 / 7.59 (shipped `_best`: 7.62; b7: 6.33) — flat at 10×
+> data. The apparent deep-depth "cliff" in per-cell-averaged charts is a
+> small-sample artifact: pooled over raw lengths, all b16 arms hold ~0.85-0.89
+> through depth 12 and taper mildly to ~0.72-0.80 at 14-16, identically across
+> data scales. Deep-depth acceptance is limited by capacity or the horizon
+> itself, not data (and not gradient weighting — FINDINGS.md §8). Recipe,
+> launcher, and charts: `training/modal_train.py::pipeline_data`,
+> `modal_benchmark_datascale.py`, `results/datascale/`.
+
 Does extending the DSpark draft horizon from **block 7 → block 16** raise the
 number of tokens the target accepts per verifier call? Two architecturally
 identical DSpark drafters (5 draft layers, hidden 2560, `markov_rank` 256, same
