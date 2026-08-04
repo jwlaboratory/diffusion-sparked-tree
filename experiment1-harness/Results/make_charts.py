@@ -137,6 +137,27 @@ def chart_acceptance(summary, out):
     print(f"wrote {out}")
 
 
+def chart_acceptance_aggregated(summary, out):
+    """Mean acceptance length per method, averaged across all datasets. One bar per
+    method. No subtitle, no caption (per request)."""
+    results = summary["results"]
+    datasets = list(results)
+    methods = [m for m in METHOD_COLOR if any(m in results[d] for d in datasets)]
+    means = {m: _mean([results[d][m]["mean_accept"] for d in datasets if m in results[d]]) for m in methods}
+    fig, ax = plt.subplots(figsize=(9, 5.4))
+    xs = list(range(len(methods)))
+    for x, m in zip(xs, methods):
+        ax.bar(x, means[m], width=0.7, color=METHOD_COLOR[m], edgecolor=SURFACE, linewidth=1.5, zorder=3)
+        ax.text(x, means[m] + 0.08, f"{means[m]:.2f}", ha="center", va="bottom", fontsize=9.5, color=INK2)
+    _style(ax)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([_label(m) for m in methods], rotation=40, ha="right", fontsize=8.5)
+    ax.set_ylabel("mean acceptance length (tokens accepted / round)")
+    ax.set_title("Acceptance length by method", fontsize=13, fontweight="bold", loc="left")
+    fig.tight_layout(); fig.savefig(out, dpi=150); plt.close(fig)
+    print(f"wrote {out}")
+
+
 def chart_per_depth(summary, out):
     results = summary["results"]
     datasets = list(results)
@@ -159,12 +180,13 @@ def chart_per_depth(summary, out):
         ls = "-" if METHOD_META[m][2] else "--"
         ax.plot(depths, means, color=METHOD_COLOR[m], linewidth=2.2, linestyle=ls,
                 marker="o", markersize=6, markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3)
-        ax.text(depths[-1] + 0.1, means[-1], _label(m), va="center", ha="left",
+        ty = min(max(means[-1], 0.61), 0.99)  # keep the end-label inside the zoomed range
+        ax.text(depths[-1] + 0.1, ty, _label(m), va="center", ha="left",
                 fontsize=8.5, color=METHOD_COLOR[m], fontweight="bold")
     _style(ax)
     ax.set_xlabel("tree depth (token position within a drafted block)")
     ax.set_ylabel("conditional accept rate  P(accept depth d | reached d)")
-    ax.set_ylim(0, 1.02)
+    ax.set_ylim(0.6, 1.0)  # zoomed to the high range
     ax.set_title("Per-depth acceptance (avg across datasets); solid = markov on, dashed = off",
                  fontsize=12.5, fontweight="bold", loc="left")
     ax.set_xlim(right=max(ax.get_xticks()) + 3)
@@ -273,6 +295,7 @@ def main():
     outdir = Path(path).parent
     chart_transfer(summary, outdir / "transfer.png")
     chart_acceptance(summary, outdir / "acceptance_by_method.png")
+    chart_acceptance_aggregated(summary, outdir / "acceptance_by_method_aggregated.png")
     chart_per_depth(summary, outdir / "per_depth_accept.png")
     chart_corrector_fit(summary, outdir / "corrector_fit.png")
 
