@@ -34,6 +34,7 @@ From Modal: `import run_experiment; run_experiment.run(cfg)`.
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from statistics import mean
 from typing import Callable, Optional
@@ -96,13 +97,16 @@ def default_config() -> dict:
         "backbones": DEFAULT_BACKBONES,
         "methods": DEFAULT_METHODS,
         "tasks": [["gsm8k", 8], ["humaneval", 8], ["mt-bench", 8]],
-        "tree_budget": 64,
+        "tree_budgets": [64, 256],
         "temperature": 0.0,
         "max_new_tokens": 512,
         "seed": 0,
         "confidence_threshold": 0.0,
         "measure_per_depth": True,
         "depth_report_limit": 16,  # must reach the b16 horizon or its advantage is invisible
+        "warmup_tokens": 32,       # warmup only touches code paths; no need for a full generation
+        "cache_dir": None,         # if set, each (budget, dataset) unit is cached here (resume)
+        "force": False,            # ignore cache and recompute
     }
 
 
@@ -204,6 +208,7 @@ def build_method_callable(
     target,
     eos_id: int,
     cfg: dict,
+    tree_budget: int,
 ) -> Callable:
     bb = backbones[method.backbone]
     model = bb.model
@@ -230,7 +235,7 @@ def build_method_callable(
     if method.verify == "tree":
         return lambda ids: sparked_tree_generate(
             model=model, target=target, input_ids=ids, mask_token_id=model.mask_token_id,
-            block_size=bs, tree_budget=cfg["tree_budget"],
+            block_size=bs, tree_budget=tree_budget,
             markov_head=corrector_head, draft_mode=bb.kind,
             **common,
         )
@@ -259,7 +264,7 @@ def per_depth_accept(acceptance_lengths: list[int], depth_limit: int) -> dict[in
 # Main run                                                                     #
 # --------------------------------------------------------------------------- #
 
-def run(cfg: dict) -> dict:
+def run(cfg: dict, on_checkpoint=None) -> dict:
     torch.manual_seed(cfg["seed"])
     torch.cuda.manual_seed_all(cfg["seed"])
     device = torch.device("cuda:0")
@@ -274,25 +279,40 @@ def run(cfg: dict) -> dict:
     correctors = build_correctors(backbones)
 
     methods = [Method(**m) for m in cfg["methods"]]
-    method_fns = {
-        m.name: build_method_callable(m, backbones, correctors, target, tokenizer.eos_token_id, cfg)
-        for m in methods
-    }
 
-    # Warmup each method once (kernels, cache-compaction extension).
+    # Warm up every (method, budget) pair once: kernels, the cache-compaction
+    # extension, and the tree builder's allocation path all differ by budget.
+    #
+    # A few rounds is enough to touch every code path; warming up at the full
+    # max_new_tokens means N_methods x N_budgets complete 512-token generations
+    # before the first measurement, which on the b16/budget-256 cells is several
+    # minutes of GPU time that measures nothing.
     warmup_text = tokenizer.apply_chat_template(
         [{"role": "user", "content": "Warmup"}],
         tokenize=False, add_generation_prompt=True, enable_thinking=False,
     )
     warmup_ids = tokenizer.encode(warmup_text, return_tensors="pt").to(device)
-    for fn in method_fns.values():
-        _ = fn(warmup_ids)
+    warmup_cfg = {**cfg, "max_new_tokens": cfg.get("warmup_tokens", 32)}
+
+    fns_by_budget: dict[int, dict[str, Callable]] = {}
+    for budget in cfg["tree_budgets"]:
+        for m in methods:
+            fn = build_method_callable(
+                m, backbones, correctors, target, tokenizer.eos_token_id, warmup_cfg, budget
+            )
+            _ = fn(warmup_ids)
+        fns_by_budget[budget] = {
+            m.name: build_method_callable(
+                m, backbones, correctors, target, tokenizer.eos_token_id, cfg, budget
+            )
+            for m in methods
+        }
 
     depth_limit = cfg["depth_report_limit"]
     summary = {
         "config": {
             **{k: cfg[k] for k in (
-                "target", "tasks", "tree_budget", "temperature", "max_new_tokens",
+                "target", "tasks", "tree_budgets", "temperature", "max_new_tokens",
                 "seed", "depth_report_limit",
             )},
             "backbones": {b.name: {"model_id": b.model_id, "kind": b.kind, "block_size": b.eff_block_size}
@@ -301,75 +321,101 @@ def run(cfg: dict) -> dict:
                         for m in methods},
             "metric": "mean_acceptance_length",
         },
-        "results": {},      # results[dataset][method]
-        "block_size": {},   # block_size[arm]
+        "results": {},      # results[budget][dataset][method]
+        "block_size": {},   # block_size[budget][arm]
     }
 
-    for dataset_name, max_samples in cfg["tasks"]:
-        dataset = load_and_process_dataset(dataset_name)
-        if max_samples is not None and len(dataset) > max_samples:
-            dataset = dataset.shuffle(seed=cfg["seed"]).select(range(max_samples))
+    # (budget, dataset) is the checkpoint unit -- roughly 5-20 GPU-minutes each. Each
+    # finished unit is written to cache_dir and the volume committed, so a timeout or
+    # a killed container costs at most one unit, and a re-run resumes. Learned the
+    # hard way: without this, an hour of work vanishes on any interruption.
+    cache_dir = cfg.get("cache_dir")
+    for budget in cfg["tree_budgets"]:
+        bkey = str(budget)
+        summary["results"][bkey] = {}
+        for dataset_name, max_samples in cfg["tasks"]:
+            unit = f"b{budget}__{dataset_name}__n{max_samples}"
+            cpath = os.path.join(cache_dir, unit + ".json") if cache_dir else None
 
-        lengths = {m.name: [] for m in methods}
-        for row in dataset:
-            text = tokenizer.apply_chat_template(
-                [{"role": "user", "content": row["turns"][0]}],
-                tokenize=False, add_generation_prompt=True, enable_thinking=False,
-            )
-            input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
+            lengths = None
+            if cpath and not cfg.get("force") and os.path.exists(cpath):
+                lengths = json.load(open(cpath))
+                print(f"[resume] {unit} loaded from cache", flush=True)
+
+            if lengths is None:
+                dataset = load_and_process_dataset(dataset_name)
+                if max_samples is not None and len(dataset) > max_samples:
+                    dataset = dataset.shuffle(seed=cfg["seed"]).select(range(max_samples))
+                lengths = {m.name: [] for m in methods}
+                for row in dataset:
+                    text = tokenizer.apply_chat_template(
+                        [{"role": "user", "content": row["turns"][0]}],
+                        tokenize=False, add_generation_prompt=True, enable_thinking=False,
+                    )
+                    input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
+                    for m in methods:
+                        result = fns_by_budget[budget][m.name](input_ids)
+                        lengths[m.name].extend(int(a) for a in result.acceptance_lengths)
+                if cpath:
+                    os.makedirs(os.path.dirname(cpath), exist_ok=True)
+                    json.dump(lengths, open(cpath, "w"))
+                    if on_checkpoint:
+                        on_checkpoint()
+                    print(f"[checkpoint] {unit} saved", flush=True)
+
+            entries = {}
             for m in methods:
-                result = method_fns[m.name](input_ids)
-                lengths[m.name].extend(result.acceptance_lengths)
+                v = lengths[m.name]
+                e = {"mean_accept": (mean(v) if v else 0.0), "rounds": len(v)}
+                if cfg["measure_per_depth"] and m.verify == "tree":
+                    e["per_depth_accept"] = per_depth_accept(v, depth_limit)
+                entries[m.name] = e
+            summary["results"][bkey][dataset_name] = entries
 
-        summary["results"][dataset_name] = {}
-        for m in methods:
-            v = lengths[m.name]
-            entry = {"mean_accept": (mean(v) if v else 0.0), "rounds": len(v)}
-            if cfg["measure_per_depth"] and m.verify == "tree":
-                entry["per_depth_accept"] = per_depth_accept(v, depth_limit)
-            summary["results"][dataset_name][m.name] = entry
+            print(f"\nDataset {dataset_name} (n={max_samples}, tree_budget {budget})")
+            print(f"{'method':<26}{'mean_accept':>12}{'rounds':>9}")
+            print("-" * 47)
+            for m in methods:
+                e = entries[m.name]
+                print(f"{m.name:<26}{e['mean_accept']:>12.3f}{e['rounds']:>9}", flush=True)
 
-        print(f"\nDataset {dataset_name} ({len(dataset)} samples, tree_budget {cfg['tree_budget']})")
-        print(f"{'method':<26}{'mean_accept':>12}{'rounds':>9}")
-        print("-" * 47)
-        for m in methods:
-            e = summary["results"][dataset_name][m.name]
-            print(f"{m.name:<26}{e['mean_accept']:>12.3f}{e['rounds']:>9}")
-
-    # Block-size rollup: for each arm (same corrector on/off + verify, differing
-    # only in backbone block size), compare the smaller vs larger block: per-dataset
-    # and overall mean acceptance, absolute delta and % change.
+    # Block-size rollup, computed per budget: for each arm (same corrector on/off +
+    # verify, differing only in backbone block size), compare smaller vs larger block.
     datasets = [d for d, _ in cfg["tasks"]]
     arms: dict[str, dict[int, str]] = {}
     for m in methods:
         arm = ("markov." if m.corrector is not None else "") + m.verify
         arms.setdefault(arm, {})[backbones[m.backbone].eff_block_size] = m.name
 
-    for arm, by_block in arms.items():
-        if len(by_block) < 2:
-            continue  # nothing to compare against
-        small_bs, large_bs = min(by_block), max(by_block)
-        small, large = by_block[small_bs], by_block[large_bs]
+    for budget in cfg["tree_budgets"]:
+        bkey = str(budget)
+        res = summary["results"][bkey]
+        summary["block_size"][bkey] = {}
+        for arm, by_block in arms.items():
+            if len(by_block) < 2:
+                continue  # nothing to compare against
+            small_bs, large_bs = min(by_block), max(by_block)
+            small, large = by_block[small_bs], by_block[large_bs]
 
-        per_dataset = {}
-        for d in datasets:
-            s = summary["results"][d][small]["mean_accept"]
-            l = summary["results"][d][large]["mean_accept"]
-            per_dataset[d] = {
-                "small": s, "large": l, "delta": l - s,
-                "pct_change": ((l - s) / s * 100.0) if s else None,
+            per_dataset = {}
+            for d in datasets:
+                s = res[d][small]["mean_accept"]
+                l = res[d][large]["mean_accept"]
+                per_dataset[d] = {
+                    "small": s, "large": l, "delta": l - s,
+                    "pct_change": ((l - s) / s * 100.0) if s else None,
+                }
+            s_all = mean([res[d][small]["mean_accept"] for d in datasets])
+            l_all = mean([res[d][large]["mean_accept"] for d in datasets])
+            summary["block_size"][bkey][arm] = {
+                "small_block": small_bs, "large_block": large_bs,
+                "small_method": small, "large_method": large,
+                "per_dataset": per_dataset,
+                "overall": {
+                    "small": s_all, "large": l_all, "delta": l_all - s_all,
+                    "pct_change": ((l_all - s_all) / s_all * 100.0) if s_all else None,
+                },
             }
-        s_all = mean([summary["results"][d][small]["mean_accept"] for d in datasets])
-        l_all = mean([summary["results"][d][large]["mean_accept"] for d in datasets])
-        summary["block_size"][arm] = {
-            "small_block": small_bs, "large_block": large_bs,
-            "small_method": small, "large_method": large,
-            "per_dataset": per_dataset,
-            "overall": {
-                "small": s_all, "large": l_all, "delta": l_all - s_all,
-                "pct_change": ((l_all - s_all) / s_all * 100.0) if s_all else None,
-            },
-        }
 
     _print_rollups(summary)
     return summary
@@ -380,12 +426,23 @@ def _print_rollups(summary: dict) -> None:
         print("\n" + "=" * 64)
         print("Block size: acceptance-length change from a longer draft horizon")
         print("=" * 64)
-        for arm, r in summary["block_size"].items():
-            o = r["overall"]
-            pct = o["pct_change"]
-            tail = "n/a" if pct is None else f"({pct:+.1f}%)"
-            print(f"  {arm:<14} b{r['small_block']}={o['small']:.3f} -> "
-                  f"b{r['large_block']}={o['large']:.3f}  delta={o['delta']:+.3f}  {tail}")
+        for bkey in sorted(summary["block_size"], key=int):
+            print(f"  tree_budget {bkey}:")
+            for arm, r in summary["block_size"][bkey].items():
+                o = r["overall"]
+                pct = o["pct_change"]
+                tail = "n/a" if pct is None else f"({pct:+.1f}%)"
+                print(f"    {arm:<16} b{r['small_block']}={o['small']:.3f} -> "
+                      f"b{r['large_block']}={o['large']:.3f}  delta={o['delta']:+.3f}  {tail}")
+                # Per-dataset, because the effect is expected to be task-dependent:
+                # a longer horizon only pays where completions actually reach deep
+                # tree positions, so chat should gain least and math/code most. The
+                # average across a mixed task set can hide a sign flip underneath it.
+                for d, pd in r["per_dataset"].items():
+                    dpct = pd["pct_change"]
+                    dtail = "n/a" if dpct is None else f"({dpct:+.1f}%)"
+                    print(f"      {d:<14} {pd['small']:.3f} -> {pd['large']:.3f}  "
+                          f"delta={pd['delta']:+.3f}  {dtail}")
 
 
 # --------------------------------------------------------------------------- #
@@ -396,7 +453,9 @@ def parse_args() -> dict:
     p = argparse.ArgumentParser()
     p.add_argument("--target", type=str, default=None)
     p.add_argument("--tasks", type=str, default=None, help="e.g. gsm8k:8,humaneval:8,mt-bench:8")
-    p.add_argument("--tree-budget", type=int, default=None)
+    p.add_argument("--tree-budgets", type=str, default=None, help="e.g. 64,256")
+    p.add_argument("--cache-dir", type=str, default=None, help="resume dir for (budget,dataset) units")
+    p.add_argument("--force", action="store_true", help="ignore cache and recompute")
     p.add_argument("--temperature", type=float, default=None)
     p.add_argument("--max-new-tokens", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
@@ -405,7 +464,9 @@ def parse_args() -> dict:
 
     cfg = default_config()
     if a.target: cfg["target"] = a.target
-    if a.tree_budget is not None: cfg["tree_budget"] = a.tree_budget
+    if a.tree_budgets: cfg["tree_budgets"] = [int(x) for x in a.tree_budgets.split(",") if x.strip()]
+    if a.cache_dir: cfg["cache_dir"] = a.cache_dir
+    if a.force: cfg["force"] = True
     if a.temperature is not None: cfg["temperature"] = a.temperature
     if a.max_new_tokens is not None: cfg["max_new_tokens"] = a.max_new_tokens
     if a.seed is not None: cfg["seed"] = a.seed

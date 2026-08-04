@@ -42,6 +42,21 @@ reach depth 8, so depths 9–16 are capacity that task never uses. Our task mix
 for a longer draft horizon; expect the block-16 advantage to concentrate on the
 structured math/code tasks, not to be uniform across the mix.
 
+## The second axis: tree budget (why it's swept)
+
+`tree_budget` is the number of draft nodes the tree may hold per round. It is now a
+**first-class axis alongside block size**, swept over `[64, 256]` rather than fixed,
+because the two axes interact. A fixed node budget spread over 16 depths gives a
+**narrower tree per depth** than the same budget spread over 7: the block-16 drafter
+trades width for depth. So at a small budget b16 can *lose* on the markov-off control
+arm — width sacrificed for depth that isn't paid back — while still *winning* on the
+markov arm, where the corrector pays the depth back. Sweeping the budget separates
+"block size helps" from "the tree was simply under-budgeted": a larger budget buys
+the width back. The charts are faceted by budget precisely so a reader can watch
+whether a b16 regression on the control arm closes as the budget grows — the sign
+genuinely differs between arms and can differ between budgets, so no chart title
+hardcodes a direction; each is derived from the measured numbers.
+
 ## The model + training recipe
 
 `shreybirmiwal/Qwen3-4B-DSpark-b16` was **warm-started** from
@@ -76,14 +91,15 @@ Full pipeline and rationale: **`training/README.md`**.
 | `BACKBONES` | dspark_b7, dspark_b16 | each `{name, model_id, kind}`; block_size intrinsic to each checkpoint |
 | `BLOCK16_MODEL_ID` | `shreybirmiwal/Qwen3-4B-DSpark-b16` | our published checkpoint, swappable |
 | `METHODS` | the four arms above | any `backbone × corrector × verify` cell |
-| `TASKS` | gsm8k:8, humaneval:8, mt-bench:8 | `(dataset, max_samples)` |
-| `TREE_BUDGET` | 64 | |
+| `TASKS` | gsm8k:4, humaneval:4, mt-bench:4 | `(dataset, max_samples)`; smoke-sized — at n=4 only large effects resolve |
+| `TREE_BUDGETS` | **[64, 256]** | swept, not fixed — the second axis (nodes/round); see the width-vs-depth note below |
 | `TEMPERATURE` | 0.0 | tree build is greedy top-k regardless |
 | `MAX_NEW_TOKENS` | 512 | |
 | `SEED` | 0 | |
 | `MEASURE_PER_DEPTH` | True | |
 | `DEPTH_REPORT_LIMIT` | **16** | must reach the b16 horizon or its advantage is invisible |
-| `GPU` / `TIMEOUT_SECONDS` | A100-40GB / 1h | |
+| `CACHE_DIR` | `/results/block16/cache` | per-`(budget, dataset)` resume checkpoints on the `ddtree-results` volume |
+| `GPU` / `TIMEOUT_SECONDS` | A100-40GB / **6h** | generous; units checkpoint, so a long run is cheap to resume |
 
 ## How to run
 
@@ -113,35 +129,52 @@ cd experiment2-block16/results
 python make_charts.py [path/to/summary.json]         # default: ./summary.json
 ```
 
-Writes three PNGs next to the JSON (matplotlib Agg, no display needed):
+Writes four PNGs next to the JSON (matplotlib Agg, no display needed). Each is a
+**small-multiple faceted by tree budget** (one panel per budget), so the same arm can
+be compared across budgets side by side:
 
 | file | what it shows |
 |---|---|
-| `block_size.png` | headline dumbbell: mean acceptance length b7 → b16, per arm |
-| `acceptance_by_method.png` | mean acceptance length, all four methods, grouped by dataset |
-| `per_depth_accept.png` | conditional accept rate vs tree depth; the b7 curves end at their block-7 horizon, the b16 curves run to 16 |
+| `block_size.png` | headline dumbbell: mean acceptance length b7 → b16 per arm, one panel per budget; each panel's title states that budget's headline direction, derived from the data (never a hardcoded sign) |
+| `block_size_by_dataset.png` | the b7 → b16 acceptance **delta split per dataset** (signed horizontal bars from a zero baseline), both arms, one panel per budget. This is the cut that exposes the **task-dependence** described in the caveat above: because the block-16 gain concentrates on the structured math/code tasks and can vanish (or reverse) on chat, a cross-dataset average can hide a sign flip — here each dataset keeps its own sign. Bars extend right where the longer horizon raises acceptance, left where it lowers it (sign carried by direction + colour + the signed label together); the markov headline is a solid bar, the `.tree` control paler + hatched. A dataset flipping side between the 64 and 256 panels is the "was the tree just under-budgeted?" signal at a glance |
+| `acceptance_by_method.png` | mean acceptance length, all four methods grouped by dataset, one panel per budget (shared y-axis) |
+| `per_depth_accept.png` | conditional accept rate vs tree depth, one panel per budget; the b7 curves end at their block-7 horizon, the b16 curves run to 16 |
+
+Color convention (kept from exp1's validated palette): cool hue family = b7, warm =
+b16; the markov headline arm is the saturated shade and solid, the markov-off `.tree`
+control the paler shade and dashed — so identity never rests on color alone.
 
 ## Where results land
 
-The benchmark writes `summary.json`:
-- on the shared `ddtree-results` volume at **`/results/block16/summary.json`**
-  (namespaced so it does not clobber experiment 1's `/results/summary.json`), and
-- downloaded to **`experiment2-block16/results/summary.json`**.
+The benchmark writes to the shared `ddtree-results` volume (namespaced under
+`/results/block16/` so it does not clobber experiment 1's `/results/summary.json`):
 
-`summary.json` shape:
+- **`/results/block16/summary.json`** — the full nested summary, also downloaded to
+  **`experiment2-block16/results/summary.json`** and fed to `make_charts.py`.
+- **`/results/block16/cache/`** — one JSON per `(budget, dataset)` unit
+  (e.g. `b64__gsm8k__n4.json`). Each unit is written here and the volume **committed**
+  the moment it finishes, so a timeout or a killed container costs at most one unit: a
+  re-run **resumes** from the cache instead of recomputing everything. Pass `--force`
+  (to `run_experiment.py`) to ignore the cache and recompute from scratch.
+
+`summary.json` shape — `results` and `block_size` are now keyed by **tree budget
+first** (string keys, e.g. `"64"`, `"256"`), then by dataset/arm:
 ```json
 {
-  "config":  { "target": "...", "depth_report_limit": 16,
+  "config":  { "target": "...", "tree_budgets": [64, 256], "depth_report_limit": 16,
                "backbones": { "dspark_b16": {"model_id": "...", "kind": "dspark", "block_size": 16}, "...": "..." },
                "methods":   { "dspark_b16.markov.tree": {"backbone": "...", "corrector": "...", "verify": "tree"}, "...": "..." } },
-  "results": { "gsm8k": { "dspark_b16.markov.tree": {"mean_accept": ..., "rounds": ..., "per_depth_accept": {"1": ..., "16": ...}}, "...": "..." } },
-  "block_size": { "markov.tree": { "small_block": 7, "large_block": 16,
-                                   "per_dataset": {"gsm8k": {"small": ..., "large": ..., "delta": ..., "pct_change": ...}},
-                                   "overall": {"small": ..., "large": ..., "delta": ..., "pct_change": ...} } }
+  "results": { "64": { "gsm8k": { "dspark_b16.markov.tree": {"mean_accept": ..., "rounds": ..., "per_depth_accept": {"1": ..., "16": ...}}, "...": "..." }, "...": "..." },
+               "256": { "...": "..." } },
+  "block_size": { "64": { "markov.tree": { "small_block": 7, "large_block": 16, "small_method": "...", "large_method": "...",
+                                           "per_dataset": {"gsm8k": {"small": ..., "large": ..., "delta": ..., "pct_change": ...}},
+                                           "overall": {"small": ..., "large": ..., "delta": ..., "pct_change": ...} } },
+                  "256": { "...": "..." } }
 }
 ```
 (`transfer` and the corrector-fit probe from experiment 1 are gone — the rollup here
-is `block_size`.)
+is `block_size`. The pre-sweep flat shape, `results[dataset][method]` /
+`block_size[arm]`, is superseded by the budget-keyed nesting above.)
 
 ## Known gotcha: RoPE base across transformers majors
 

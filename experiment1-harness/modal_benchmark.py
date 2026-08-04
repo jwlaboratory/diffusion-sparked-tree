@@ -185,6 +185,55 @@ def run_one(payload: dict) -> dict:
     return {"dataset": dataset, **out}
 
 
+@app.function(
+    image=image, gpu=GPU, timeout=30 * 60,
+    volumes={"/cache": hf_cache, "/results": results_vol}, secrets=secrets,
+)
+def verify_equiv(n: int = 4, tree_budget: int = 64, max_new_tokens: int = 256) -> dict:
+    """External validation: our dflash.tree (sparked_tree, markov=None) must equal
+    the OFFICIAL ddtree_generate round-for-round. Writes result to the volume."""
+    import os
+    sys.path.insert(0, "/root/DDTree")
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from model import DFlashDraftModel, load_and_process_dataset
+    from ddtree import ddtree_generate, maybe_enable_cpp_compact
+    from sparked_tree import sparked_tree_generate
+    import run_experiment as exp  # for load_config (RoPE normalization)
+
+    torch.manual_seed(0); torch.cuda.manual_seed_all(0)
+    maybe_enable_cpp_compact(True)
+    device = torch.device("cuda:0")
+    target = AutoModelForCausalLM.from_pretrained(
+        TARGET, attn_implementation="sdpa", dtype=torch.bfloat16).to(device).eval()
+    draft = DFlashDraftModel.from_pretrained(
+        "z-lab/Qwen3-4B-DFlash-b16", config=exp.load_config("z-lab/Qwen3-4B-DFlash-b16"),
+        attn_implementation="flash_attention_2", dtype=torch.bfloat16).to(device).eval()
+    tok = AutoTokenizer.from_pretrained(TARGET)
+    ds = load_and_process_dataset("gsm8k").shuffle(seed=0).select(range(n))
+    common = dict(mask_token_id=draft.mask_token_id, block_size=draft.block_size,
+                  max_new_tokens=max_new_tokens, stop_token_ids=[tok.eos_token_id],
+                  temperature=0.0, tree_budget=tree_budget)
+    max_diff, mismatch = 0, False
+    for row in ds:
+        text = tok.apply_chat_template([{"role": "user", "content": row["turns"][0]}],
+                                       tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        ids = tok.encode(text, return_tensors="pt").to(device)
+        a = ddtree_generate(model=draft, target=target, input_ids=ids, **common).acceptance_lengths
+        b = sparked_tree_generate(model=draft, target=target, input_ids=ids,
+                                  markov_head=None, draft_mode="dflash", **common).acceptance_lengths
+        if len(a) != len(b):
+            mismatch = True
+        else:
+            max_diff = max(max_diff, max((abs(x - y) for x, y in zip(a, b)), default=0))
+    result = {"n": n, "tree_budget": tree_budget, "max_abs_diff": max_diff,
+              "length_mismatch": mismatch, "pass": (not mismatch and max_diff == 0)}
+    json.dump(result, open("/results/verify_equiv.json", "w"), indent=2)
+    results_vol.commit()
+    print("verify_equiv:", result)
+    return result
+
+
 @app.local_entrypoint()
 def main(force: bool = FORCE):
     cfg = build_run_config(force=force)

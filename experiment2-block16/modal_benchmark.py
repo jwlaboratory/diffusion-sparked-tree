@@ -59,13 +59,19 @@ METHODS = [
 ]
 
 # Small representative slice: one math, one code, one chat. (dataset, max_samples)
+# Small on purpose: this is a smoke-sized slice, and the
+# (budget x dataset) matrix is 6 units. Raise it once the direction is established
+# -- at n=4 only large effects are resolvable (see reproduce.md).
 TASKS = [
-    ["gsm8k", 8],
-    ["humaneval", 8],
-    ["mt-bench", 8],
+    ["gsm8k", 4],
+    ["humaneval", 4],
+    ["mt-bench", 4],
 ]
 
-TREE_BUDGET = 64
+# Swept, not fixed. At a fixed budget a longer block spreads the same nodes over
+# more depths, so b16 trades width for depth; 256 buys back the width and separates
+# "block size helps" from "we under-budgeted the tree".
+TREE_BUDGETS = [64, 256]
 TEMPERATURE = 0.0          # greedy / deterministic (tree build is greedy top-k regardless)
 MAX_NEW_TOKENS = 512
 SEED = 0
@@ -73,10 +79,14 @@ CONFIDENCE_THRESHOLD = 0.0  # dspark chain only (unused by the tree arms here)
 MEASURE_PER_DEPTH = True
 DEPTH_REPORT_LIMIT = 16    # must reach the b16 horizon or its whole advantage is invisible
 
+# Each (budget, dataset) unit is checkpointed here on the results volume and the
+# volume committed, so an interruption costs at most one unit and a re-run resumes.
+CACHE_DIR = "/results/block16/cache"
+
 # Acceptance length at temperature 0 is deterministic and GPU-independent, so an
 # A100-40GB reproduces the numbers exactly. Timing/speedup would need matching H100.
 GPU = "A100-40GB"
-TIMEOUT_SECONDS = 60 * 60
+TIMEOUT_SECONDS = 6 * 60 * 60   # generous: units checkpoint, so a long run is cheap to resume
 
 # Pinned versions. torch 2.5.1 (cu124) + a matching prebuilt flash-attn wheel.
 TORCH_VERSION = "2.5.1"
@@ -96,7 +106,8 @@ def build_run_config() -> dict:
         "backbones": BACKBONES,
         "methods": list(METHODS),
         "tasks": TASKS,
-        "tree_budget": TREE_BUDGET,
+        "tree_budgets": TREE_BUDGETS,
+        "cache_dir": CACHE_DIR,
         "temperature": TEMPERATURE,
         "max_new_tokens": MAX_NEW_TOKENS,
         "seed": SEED,
@@ -157,7 +168,8 @@ def run_experiment(cfg: dict) -> dict:
     sys.path.insert(0, "/root/DDTree")
     import run_experiment as exp  # the driver in DDTree/
 
-    summary = exp.run(cfg)
+    # commit after every checkpointed unit so progress survives a timeout/kill
+    summary = exp.run(cfg, on_checkpoint=results_vol.commit)
 
     # Namespaced: the `ddtree-results` volume is shared with experiment 1, which
     # writes /results/summary.json. Writing there would clobber its results.
@@ -178,12 +190,14 @@ def main():
 
     print(f"\nSaved summary to {out_dir / 'summary.json'}")
     if summary.get("block_size"):
-        print("\nBlock size (acceptance-length change from b7 -> b16, per arm):")
-        for arm, r in summary["block_size"].items():
-            o = r["overall"]
-            pct = o.get("pct_change")
-            if pct is None:
-                print(f"  {arm}: n/a")
-            else:
-                print(f"  {arm}: b{r['small_block']}={o['small']:.3f} -> "
-                      f"b{r['large_block']}={o['large']:.3f} ({pct:+.1f}%)")
+        print("\nBlock size (acceptance-length change from b7 -> b16), per tree budget:")
+        for bkey in sorted(summary["block_size"], key=int):
+            print(f"  tree_budget {bkey}:")
+            for arm, r in summary["block_size"][bkey].items():
+                o = r["overall"]
+                pct = o.get("pct_change")
+                if pct is None:
+                    print(f"    {arm}: n/a")
+                else:
+                    print(f"    {arm}: b{r['small_block']}={o['small']:.3f} -> "
+                          f"b{r['large_block']}={o['large']:.3f} ({pct:+.1f}%)")
