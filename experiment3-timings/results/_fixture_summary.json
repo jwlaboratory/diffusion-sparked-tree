@@ -1,0 +1,1241 @@
+{
+  "config": {
+    "target": "Qwen/Qwen3-4B",
+    "tree_budgets": [
+      64,
+      256
+    ],
+    "passes": [
+      "clean",
+      "instrumented"
+    ],
+    "cpu": 8,
+    "gpu": "H100",
+    "measure_corrector_fit": false,
+    "backbones": {
+      "dflash_b16": {
+        "model_id": "z-lab/Qwen3-4B-DFlash-b16",
+        "kind": "dflash",
+        "block_size": 16
+      },
+      "dspark_b7": {
+        "model_id": "deepseek-ai/dspark_qwen3_4b_block7",
+        "kind": "dspark",
+        "block_size": 7
+      },
+      "dspark_b16": {
+        "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16",
+        "kind": "dspark",
+        "block_size": 16
+      }
+    },
+    "methods": {
+      "dflash.chain": {
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "chain"
+      },
+      "dspark_b7.chain": {
+        "backbone": "dspark_b7",
+        "corrector": null,
+        "verify": "chain"
+      },
+      "ddtree": {
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "ddtree"
+      },
+      "dspark_b16.markov.tree": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree"
+      }
+    },
+    "phase_order": [
+      "draft_forward",
+      "candidate_build",
+      "candidate_pack",
+      "verify",
+      "walk_accept",
+      "kv_update",
+      "state_carry",
+      "unaccounted"
+    ]
+  },
+  "results": {
+    "clean": {
+      "64": {
+        "gsm8k": {
+          "dflash.chain": {
+            "tps_decode": 104.515,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 341,
+            "mean_accept": 3.0,
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 93.923,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 301,
+            "mean_accept": 3.4,
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 83.808,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 284,
+            "mean_accept": 3.6,
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 8.635,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 262,
+            "mean_accept": 3.9,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "dflash.chain": {
+            "tps_decode": 95.014,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 256,
+            "mean_accept": 3.0,
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 85.385,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 225,
+            "mean_accept": 3.4,
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 76.189,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 213,
+            "mean_accept": 3.6,
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 7.85,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 196,
+            "mean_accept": 3.9,
+            "budget_invariant": false
+          }
+        }
+      },
+      "256": {
+        "gsm8k": {
+          "dflash.chain": {
+            "tps_decode": 104.515,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 341,
+            "mean_accept": 3.0,
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 93.923,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 301,
+            "mean_accept": 3.4,
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 54.825,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 284,
+            "mean_accept": 3.6,
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 2.447,
+            "ttft": 0.041,
+            "output_tokens": 1024,
+            "rounds": 262,
+            "mean_accept": 3.9,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "dflash.chain": {
+            "tps_decode": 95.014,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 256,
+            "mean_accept": 3.0,
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 85.385,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 225,
+            "mean_accept": 3.4,
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 49.841,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 213,
+            "mean_accept": 3.6,
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 2.225,
+            "ttft": 0.041,
+            "output_tokens": 768,
+            "rounds": 196,
+            "mean_accept": 3.9,
+            "budget_invariant": false
+          }
+        }
+      }
+    },
+    "instrumented": {
+      "64": {
+        "gsm8k": {
+          "dflash.chain": {
+            "tps_decode": 96.154,
+            "output_tokens": 1024,
+            "rounds": 341,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.8912,
+                "sec_per_token": 0.0038,
+                "share": 0.3654
+              },
+              "candidate_build": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0385
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 5.3248,
+                "sec_per_token": 0.0052,
+                "share": 0.5
+              },
+              "walk_accept": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0385
+              },
+              "kv_update": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0288
+              },
+              "state_carry": {
+                "sec": 0.2048,
+                "sec_per_token": 0.0002,
+                "share": 0.0192
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0096
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 85.47,
+            "output_tokens": 1024,
+            "rounds": 301,
+            "phases": {
+              "draft_forward": {
+                "sec": 4.096,
+                "sec_per_token": 0.004,
+                "share": 0.3419
+              },
+              "candidate_build": {
+                "sec": 0.512,
+                "sec_per_token": 0.0005,
+                "share": 0.0427
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 6.144,
+                "sec_per_token": 0.006,
+                "share": 0.5128
+              },
+              "walk_accept": {
+                "sec": 0.512,
+                "sec_per_token": 0.0005,
+                "share": 0.0427
+              },
+              "kv_update": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0256
+              },
+              "state_carry": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0256
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0085
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 63.694,
+            "output_tokens": 1024,
+            "rounds": 284,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.072,
+                "sec_per_token": 0.003,
+                "share": 0.1911
+              },
+              "candidate_build": {
+                "sec": 2.048,
+                "sec_per_token": 0.002,
+                "share": 0.1274
+              },
+              "candidate_pack": {
+                "sec": 0.8192,
+                "sec_per_token": 0.0008,
+                "share": 0.051
+              },
+              "verify": {
+                "sec": 7.68,
+                "sec_per_token": 0.0075,
+                "share": 0.4777
+              },
+              "walk_accept": {
+                "sec": 1.2288,
+                "sec_per_token": 0.0012,
+                "share": 0.0764
+              },
+              "kv_update": {
+                "sec": 0.7168,
+                "sec_per_token": 0.0007,
+                "share": 0.0446
+              },
+              "state_carry": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0255
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0064
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.3072
+              },
+              "candidate_build.expand": {
+                "sec": 1.4336
+              },
+              "candidate_build.visibility": {
+                "sec": 0.3072
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 6.649,
+            "output_tokens": 1024,
+            "rounds": 262,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.584,
+                "sec_per_token": 0.0035,
+                "share": 0.0233
+              },
+              "candidate_build": {
+                "sec": 143.36,
+                "sec_per_token": 0.14,
+                "share": 0.9309
+              },
+              "candidate_pack": {
+                "sec": 1.024,
+                "sec_per_token": 0.001,
+                "share": 0.0066
+              },
+              "verify": {
+                "sec": 4.608,
+                "sec_per_token": 0.0045,
+                "share": 0.0299
+              },
+              "walk_accept": {
+                "sec": 0.8192,
+                "sec_per_token": 0.0008,
+                "share": 0.0053
+              },
+              "kv_update": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0027
+              },
+              "state_carry": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0007
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0007
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 4.3008
+              },
+              "candidate_build.expand": {
+                "sec": 136.192
+              },
+              "candidate_build.visibility": {
+                "sec": 2.8672
+              },
+              "candidate_build.markov": {
+                "sec": 129.024
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "dflash.chain": {
+            "tps_decode": 87.413,
+            "output_tokens": 768,
+            "rounds": 256,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.2102,
+                "sec_per_token": 0.00418,
+                "share": 0.3654
+              },
+              "candidate_build": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0385
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 4.393,
+                "sec_per_token": 0.00572,
+                "share": 0.5
+              },
+              "walk_accept": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0385
+              },
+              "kv_update": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0288
+              },
+              "state_carry": {
+                "sec": 0.169,
+                "sec_per_token": 0.00022,
+                "share": 0.0192
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0096
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 77.7,
+            "output_tokens": 768,
+            "rounds": 225,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.3792,
+                "sec_per_token": 0.0044,
+                "share": 0.3419
+              },
+              "candidate_build": {
+                "sec": 0.4224,
+                "sec_per_token": 0.00055,
+                "share": 0.0427
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 5.0688,
+                "sec_per_token": 0.0066,
+                "share": 0.5128
+              },
+              "walk_accept": {
+                "sec": 0.4224,
+                "sec_per_token": 0.00055,
+                "share": 0.0427
+              },
+              "kv_update": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0256
+              },
+              "state_carry": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0256
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0085
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 57.904,
+            "output_tokens": 768,
+            "rounds": 213,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.5344,
+                "sec_per_token": 0.0033,
+                "share": 0.1911
+              },
+              "candidate_build": {
+                "sec": 1.6896,
+                "sec_per_token": 0.0022,
+                "share": 0.1274
+              },
+              "candidate_pack": {
+                "sec": 0.6758,
+                "sec_per_token": 0.00088,
+                "share": 0.051
+              },
+              "verify": {
+                "sec": 6.336,
+                "sec_per_token": 0.00825,
+                "share": 0.4777
+              },
+              "walk_accept": {
+                "sec": 1.0138,
+                "sec_per_token": 0.00132,
+                "share": 0.0764
+              },
+              "kv_update": {
+                "sec": 0.5914,
+                "sec_per_token": 0.00077,
+                "share": 0.0446
+              },
+              "state_carry": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0255
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0064
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.2304
+              },
+              "candidate_build.expand": {
+                "sec": 1.0752
+              },
+              "candidate_build.visibility": {
+                "sec": 0.2304
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 6.044,
+            "output_tokens": 768,
+            "rounds": 196,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.9568,
+                "sec_per_token": 0.00385,
+                "share": 0.0233
+              },
+              "candidate_build": {
+                "sec": 118.272,
+                "sec_per_token": 0.154,
+                "share": 0.9309
+              },
+              "candidate_pack": {
+                "sec": 0.8448,
+                "sec_per_token": 0.0011,
+                "share": 0.0066
+              },
+              "verify": {
+                "sec": 3.8016,
+                "sec_per_token": 0.00495,
+                "share": 0.0299
+              },
+              "walk_accept": {
+                "sec": 0.6758,
+                "sec_per_token": 0.00088,
+                "share": 0.0053
+              },
+              "kv_update": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0027
+              },
+              "state_carry": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0007
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0007
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 3.2256
+              },
+              "candidate_build.expand": {
+                "sec": 102.144
+              },
+              "candidate_build.visibility": {
+                "sec": 2.1504
+              },
+              "candidate_build.markov": {
+                "sec": 96.768
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          }
+        }
+      },
+      "256": {
+        "gsm8k": {
+          "dflash.chain": {
+            "tps_decode": 96.154,
+            "output_tokens": 1024,
+            "rounds": 341,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.8912,
+                "sec_per_token": 0.0038,
+                "share": 0.3654
+              },
+              "candidate_build": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0385
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 5.3248,
+                "sec_per_token": 0.0052,
+                "share": 0.5
+              },
+              "walk_accept": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0385
+              },
+              "kv_update": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0288
+              },
+              "state_carry": {
+                "sec": 0.2048,
+                "sec_per_token": 0.0002,
+                "share": 0.0192
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0096
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 85.47,
+            "output_tokens": 1024,
+            "rounds": 301,
+            "phases": {
+              "draft_forward": {
+                "sec": 4.096,
+                "sec_per_token": 0.004,
+                "share": 0.3419
+              },
+              "candidate_build": {
+                "sec": 0.512,
+                "sec_per_token": 0.0005,
+                "share": 0.0427
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 6.144,
+                "sec_per_token": 0.006,
+                "share": 0.5128
+              },
+              "walk_accept": {
+                "sec": 0.512,
+                "sec_per_token": 0.0005,
+                "share": 0.0427
+              },
+              "kv_update": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0256
+              },
+              "state_carry": {
+                "sec": 0.3072,
+                "sec_per_token": 0.0003,
+                "share": 0.0256
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0085
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 41.667,
+            "output_tokens": 1024,
+            "rounds": 284,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.072,
+                "sec_per_token": 0.003,
+                "share": 0.125
+              },
+              "candidate_build": {
+                "sec": 7.5776,
+                "sec_per_token": 0.0074,
+                "share": 0.3083
+              },
+              "candidate_pack": {
+                "sec": 1.6384,
+                "sec_per_token": 0.0016,
+                "share": 0.0667
+              },
+              "verify": {
+                "sec": 9.216,
+                "sec_per_token": 0.009,
+                "share": 0.375
+              },
+              "walk_accept": {
+                "sec": 1.8432,
+                "sec_per_token": 0.0018,
+                "share": 0.075
+              },
+              "kv_update": {
+                "sec": 0.7168,
+                "sec_per_token": 0.0007,
+                "share": 0.0292
+              },
+              "state_carry": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0167
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0042
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 1.1366
+              },
+              "candidate_build.expand": {
+                "sec": 5.3043
+              },
+              "candidate_build.visibility": {
+                "sec": 1.1366
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 1.884,
+            "output_tokens": 1024,
+            "rounds": 262,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.584,
+                "sec_per_token": 0.0035,
+                "share": 0.0066
+              },
+              "candidate_build": {
+                "sec": 530.432,
+                "sec_per_token": 0.518,
+                "share": 0.9761
+              },
+              "candidate_pack": {
+                "sec": 2.048,
+                "sec_per_token": 0.002,
+                "share": 0.0038
+              },
+              "verify": {
+                "sec": 5.5296,
+                "sec_per_token": 0.0054,
+                "share": 0.0102
+              },
+              "walk_accept": {
+                "sec": 1.2288,
+                "sec_per_token": 0.0012,
+                "share": 0.0023
+              },
+              "kv_update": {
+                "sec": 0.4096,
+                "sec_per_token": 0.0004,
+                "share": 0.0008
+              },
+              "state_carry": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0002
+              },
+              "unaccounted": {
+                "sec": 0.1024,
+                "sec_per_token": 0.0001,
+                "share": 0.0002
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 15.913
+              },
+              "candidate_build.expand": {
+                "sec": 503.9104
+              },
+              "candidate_build.visibility": {
+                "sec": 10.6086
+              },
+              "candidate_build.markov": {
+                "sec": 477.3888
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "dflash.chain": {
+            "tps_decode": 87.413,
+            "output_tokens": 768,
+            "rounds": 256,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.2102,
+                "sec_per_token": 0.00418,
+                "share": 0.3654
+              },
+              "candidate_build": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0385
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 4.393,
+                "sec_per_token": 0.00572,
+                "share": 0.5
+              },
+              "walk_accept": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0385
+              },
+              "kv_update": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0288
+              },
+              "state_carry": {
+                "sec": 0.169,
+                "sec_per_token": 0.00022,
+                "share": 0.0192
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0096
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "dspark_b7.chain": {
+            "tps_decode": 77.7,
+            "output_tokens": 768,
+            "rounds": 225,
+            "phases": {
+              "draft_forward": {
+                "sec": 3.3792,
+                "sec_per_token": 0.0044,
+                "share": 0.3419
+              },
+              "candidate_build": {
+                "sec": 0.4224,
+                "sec_per_token": 0.00055,
+                "share": 0.0427
+              },
+              "candidate_pack": null,
+              "verify": {
+                "sec": 5.0688,
+                "sec_per_token": 0.0066,
+                "share": 0.5128
+              },
+              "walk_accept": {
+                "sec": 0.4224,
+                "sec_per_token": 0.00055,
+                "share": 0.0427
+              },
+              "kv_update": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0256
+              },
+              "state_carry": {
+                "sec": 0.2534,
+                "sec_per_token": 0.00033,
+                "share": 0.0256
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0085
+              }
+            },
+            "subphases": {},
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": true
+          },
+          "ddtree": {
+            "tps_decode": 37.879,
+            "output_tokens": 768,
+            "rounds": 213,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.5344,
+                "sec_per_token": 0.0033,
+                "share": 0.125
+              },
+              "candidate_build": {
+                "sec": 6.2515,
+                "sec_per_token": 0.00814,
+                "share": 0.3083
+              },
+              "candidate_pack": {
+                "sec": 1.3517,
+                "sec_per_token": 0.00176,
+                "share": 0.0667
+              },
+              "verify": {
+                "sec": 7.6032,
+                "sec_per_token": 0.0099,
+                "share": 0.375
+              },
+              "walk_accept": {
+                "sec": 1.5206,
+                "sec_per_token": 0.00198,
+                "share": 0.075
+              },
+              "kv_update": {
+                "sec": 0.5914,
+                "sec_per_token": 0.00077,
+                "share": 0.0292
+              },
+              "state_carry": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0167
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0042
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.8525
+              },
+              "candidate_build.expand": {
+                "sec": 3.9782
+              },
+              "candidate_build.visibility": {
+                "sec": 0.8525
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          },
+          "dspark_b16.markov.tree": {
+            "tps_decode": 1.713,
+            "output_tokens": 768,
+            "rounds": 196,
+            "phases": {
+              "draft_forward": {
+                "sec": 2.9568,
+                "sec_per_token": 0.00385,
+                "share": 0.0066
+              },
+              "candidate_build": {
+                "sec": 437.6064,
+                "sec_per_token": 0.5698,
+                "share": 0.9761
+              },
+              "candidate_pack": {
+                "sec": 1.6896,
+                "sec_per_token": 0.0022,
+                "share": 0.0038
+              },
+              "verify": {
+                "sec": 4.5619,
+                "sec_per_token": 0.00594,
+                "share": 0.0102
+              },
+              "walk_accept": {
+                "sec": 1.0138,
+                "sec_per_token": 0.00132,
+                "share": 0.0023
+              },
+              "kv_update": {
+                "sec": 0.3379,
+                "sec_per_token": 0.00044,
+                "share": 0.0008
+              },
+              "state_carry": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0002
+              },
+              "unaccounted": {
+                "sec": 0.0845,
+                "sec_per_token": 0.00011,
+                "share": 0.0002
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 11.9347
+              },
+              "candidate_build.expand": {
+                "sec": 377.9328
+              },
+              "candidate_build.visibility": {
+                "sec": 7.9565
+              },
+              "candidate_build.markov": {
+                "sec": 358.0416
+              }
+            },
+            "cold_round": {
+              "sec": 0.21
+            },
+            "budget_invariant": false
+          }
+        }
+      }
+    }
+  },
+  "timing": {
+    "64": {
+      "dflash.chain": {
+        "tps_clean": 100.22,
+        "tps_instrumented": 92.203,
+        "instrumentation_tax": 0.08,
+        "dominant_phase": "verify",
+        "dominant_share": 0.5,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 104.515
+          },
+          "humaneval": {
+            "tps_clean": 95.014
+          }
+        }
+      },
+      "dspark_b7.chain": {
+        "tps_clean": 90.063,
+        "tps_instrumented": 81.958,
+        "instrumentation_tax": 0.09,
+        "dominant_phase": "verify",
+        "dominant_share": 0.5128,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 93.923
+          },
+          "humaneval": {
+            "tps_clean": 85.385
+          }
+        }
+      },
+      "ddtree": {
+        "tps_clean": 80.364,
+        "tps_instrumented": 61.077,
+        "instrumentation_tax": 0.24,
+        "dominant_phase": "verify",
+        "dominant_share": 0.4777,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 83.808
+          },
+          "humaneval": {
+            "tps_clean": 76.189
+          }
+        }
+      },
+      "dspark_b16.markov.tree": {
+        "tps_clean": 8.28,
+        "tps_instrumented": 6.375,
+        "instrumentation_tax": 0.23,
+        "dominant_phase": "candidate_build",
+        "dominant_share": 0.9309,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 8.635
+          },
+          "humaneval": {
+            "tps_clean": 7.85
+          }
+        }
+      }
+    },
+    "256": {
+      "dflash.chain": {
+        "tps_clean": 100.22,
+        "tps_instrumented": 92.203,
+        "instrumentation_tax": 0.08,
+        "dominant_phase": "verify",
+        "dominant_share": 0.5,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 104.515
+          },
+          "humaneval": {
+            "tps_clean": 95.014
+          }
+        }
+      },
+      "dspark_b7.chain": {
+        "tps_clean": 90.063,
+        "tps_instrumented": 81.958,
+        "instrumentation_tax": 0.09,
+        "dominant_phase": "verify",
+        "dominant_share": 0.5128,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 93.923
+          },
+          "humaneval": {
+            "tps_clean": 85.385
+          }
+        }
+      },
+      "ddtree": {
+        "tps_clean": 52.572,
+        "tps_instrumented": 39.955,
+        "instrumentation_tax": 0.24,
+        "dominant_phase": "verify",
+        "dominant_share": 0.375,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 54.825
+          },
+          "humaneval": {
+            "tps_clean": 49.841
+          }
+        }
+      },
+      "dspark_b16.markov.tree": {
+        "tps_clean": 2.347,
+        "tps_instrumented": 1.807,
+        "instrumentation_tax": 0.2301,
+        "dominant_phase": "candidate_build",
+        "dominant_share": 0.9761,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 2.447
+          },
+          "humaneval": {
+            "tps_clean": 2.225
+          }
+        }
+      }
+    }
+  }
+}
