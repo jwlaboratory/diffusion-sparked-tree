@@ -209,6 +209,51 @@ def build_correctors(backbones: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Method dispatch                                                              #
 # --------------------------------------------------------------------------- #
+#
+# METHOD SETTINGS (EXACT) -- verified against the code below, dspark.py,
+# sparked_tree.py, dflash.py, and model/dspark.py. There is intentionally ONE
+# subtlety: `dspark.chain` uses the DSpark markov head even though its name has no
+# ".markov". The head is DSpark's native drafter and is applied *intrinsically*
+# inside dspark_generate (via model.sample_draft_tokens -> self.markov_head), not
+# through the `corrector` slot. So "corrector=None" on dspark.chain does NOT mean
+# "no markov". Read the "markov head" column, not the method name.
+#
+# Backbones (from DEFAULT_BACKBONES; block_size = checkpoint config, no override):
+#   dflash_b16 : z-lab/Qwen3-4B-DFlash-b16          kind=dflash  eff_block_size=16
+#                in-place indexing (hidden i -> token i); borrows the TARGET's
+#                embed_tokens/lm_head; drafts block_size-1 = 15 tokens; NO head.
+#   dspark_b7  : deepseek-ai/dspark_qwen3_4b_block7 kind=dspark  eff_block_size=7
+#                next-token indexing (hidden i -> token i+1); OWNS embed/lm_head;
+#                drafts block_size = 7 tokens; carries a VanillaMarkovHead.
+#   Corrector "dspark_b7_markov" = that dspark_b7 head, token-only (bias = W2 @ W1[prev]),
+#   so it can be spliced onto EITHER backbone.
+#
+# | method              | backbone   | drafter indexing        | markov head            | corrector slot     | verify | tree_budget | temp |
+# |---------------------|------------|-------------------------|------------------------|--------------------|--------|-------------|------|
+# | dflash.chain        | dflash_b16 | in-place, 15 drafts     | OFF (none)             | none (disallowed)  | chain  | n/a         | 0.0  |
+# | dflash.tree         | dflash_b16 | in-place, depth<=15     | OFF (none)             | None               | tree   | 64          | 0.0  |
+# | dflash.markov.tree  | dflash_b16 | in-place, depth<=15     | ON (FOREIGN dspark_b7) | dspark_b7_markov   | tree   | 64          | 0.0  |
+# | dspark.chain        | dspark_b7  | next-token, 7 drafts    | ON (NATIVE, intrinsic) | none (n/a)         | chain  | n/a         | 0.0  |
+# | dspark.tree         | dspark_b7  | next-token, depth<=7    | OFF (none)             | None               | tree   | 64          | 0.0  |
+# | dspark.markov.tree  | dspark_b7  | next-token, depth<=7    | ON (NATIVE dspark_b7)  | dspark_b7_markov   | tree   | 64          | 0.0  |
+#
+# markov head column: OFF = raw backbone logits (per-depth-independent tree, or
+#   parallel argmax chain). ON/NATIVE = the dspark_b7 head on its own backbone.
+#   ON/FOREIGN = the dspark_b7 head spliced onto the DFlash backbone it was NOT
+#   trained on (the negative-transfer control). "intrinsic" = applied inside
+#   dspark_generate, not via the corrector slot.
+# corrector slot: the `corrector` value in the method spec. dflash.chain forbids it
+#   (dflash_generate has no corrector); dspark.chain ignores it (the head is intrinsic).
+# tree_budget/temperature come from cfg (defaults 64 / 0.0). confidence_threshold
+#   defaults 0.0, so dspark.chain's confidence-truncation head is inactive (never
+#   truncates the 7-token proposal). The corrector-fit probe (probe_corrector =
+#   dspark_b7_markov) runs measurement-only on the two no-corrector tree methods
+#   (dflash.tree, dspark.tree) and never changes the tree that is built.
+#
+# The head's effect = within-backbone tree delta with corrector off vs on:
+#   dspark.markov.tree - dspark.tree (own, predicted >> 0) vs
+#   dflash.markov.tree - dflash.tree (foreign, predicted <= 0).
+# --------------------------------------------------------------------------- #
 
 def build_method_callable(
     method: Method,

@@ -21,6 +21,45 @@ with the corrector off vs on: `dspark.markov.tree − dspark.tree` (own) vs
 `dflash.markov.tree − dflash.tree` (foreign). The claim predicts own ≫ 0, foreign ≤ 0.
 `dspark.chain` / `dflash.chain` are native-drafting references.
 
+### Exact method settings (verified against the code)
+
+Read the **markov head** column, not the method name. The one subtlety:
+`dspark.chain` **uses the DSpark markov head** even though its name has no `.markov`
+— the head is DSpark's native drafter, applied *intrinsically* inside
+`dspark_generate` (`model.sample_draft_tokens → self.markov_head`), not via the
+`corrector` slot. So `corrector=None` on `dspark.chain` does **not** mean "no markov".
+
+Backbones (block_size = checkpoint config, no runtime override):
+
+- **DFlash-b16** = `z-lab/Qwen3-4B-DFlash-b16`, kind `dflash`, effective `block_size=16`.
+  In-place indexing (hidden `i` → token `i`); borrows the **target's** `embed_tokens`/`lm_head`;
+  drafts `block_size-1 = 15` tokens; has **no** markov head.
+- **DSpark-b7** = `deepseek-ai/dspark_qwen3_4b_block7`, kind `dspark`, effective `block_size=7`.
+  Next-token indexing (hidden `i` → token `i+1`); **owns** `embed_tokens`/`lm_head`;
+  drafts `block_size = 7` tokens; carries a `VanillaMarkovHead`.
+- Corrector `dspark_b7_markov` = the DSpark-b7 head, token-only (`bias = W2 @ W1[prev]`),
+  so it can be spliced onto **either** backbone.
+
+| method | backbone (id / kind / eff block_size) | drafter indexing | markov head (ON/OFF + source) | corrector slot | verify | tree_budget | temp |
+|---|---|---|---|---|---|---|---|
+| `dflash.chain` | `z-lab/Qwen3-4B-DFlash-b16` / dflash / 16 | in-place, 15 drafts | **OFF** (none) | none (disallowed) | chain | n/a | 0.0 |
+| `dflash.tree` | `z-lab/Qwen3-4B-DFlash-b16` / dflash / 16 | in-place, depth ≤ 15 | **OFF** (none) | None | tree | 64 | 0.0 |
+| `dflash.markov.tree` | `z-lab/Qwen3-4B-DFlash-b16` / dflash / 16 | in-place, depth ≤ 15 | **ON — FOREIGN** (dspark_b7 head on DFlash) | `dspark_b7_markov` | tree | 64 | 0.0 |
+| `dspark.chain` | `deepseek-ai/dspark_qwen3_4b_block7` / dspark / 7 | next-token, 7 drafts | **ON — NATIVE, intrinsic** (own head in `dspark_generate`) | none (ignored) | chain | n/a | 0.0 |
+| `dspark.tree` | `deepseek-ai/dspark_qwen3_4b_block7` / dspark / 7 | next-token, depth ≤ 7 | **OFF** (none) | None | tree | 64 | 0.0 |
+| `dspark.markov.tree` | `deepseek-ai/dspark_qwen3_4b_block7` / dspark / 7 | next-token, depth ≤ 7 | **ON — NATIVE** (own head conditions each tree node) | `dspark_b7_markov` | tree | 64 | 0.0 |
+
+Notes:
+- **markov OFF** = raw backbone logits: a per-depth-independent tree (`markov_head=None`
+  in `sparked_tree_generate` skips the `bias(prev)` term), or a parallel-argmax chain.
+- **corrector slot** is the `corrector` field in the method spec. `dflash.chain` forbids it
+  (`dflash_generate` has no corrector); `dspark.chain` ignores it (head is intrinsic).
+- **temperature 0.0** everywhere (greedy). `confidence_threshold=0.0`, so `dspark.chain`'s
+  confidence-truncation head is inactive and never shortens the 7-token proposal.
+- The corrector-fit **probe** (`PROBE_CORRECTOR = dspark_b7_markov`) runs measurement-only
+  on the two no-corrector tree methods (`dflash.tree`, `dspark.tree`) and never alters the
+  tree that is actually built.
+
 
 ## Tunables (constants at the top of `modal_benchmark.py`)
 

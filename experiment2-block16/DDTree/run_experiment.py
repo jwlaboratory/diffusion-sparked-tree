@@ -32,6 +32,62 @@ Standalone: `python run_experiment.py`  (runs the default arms on gsm8k:8, ...).
 From Modal: `import run_experiment; run_experiment.run(cfg)`.
 """
 
+# =========================================================================== #
+# METHOD SETTINGS (EXACT) -- verified against this file's code, not assumed.   #
+# =========================================================================== #
+#
+# All four default arms are DSpark backbones verified with TREE decoding. There
+# are NO `.chain` arms and NO DFlash arms in experiment 2 (the chain path and
+# draft_mode="dflash" exist in the code but are never configured here). Both
+# backbones carry markov_rank=256 vanilla markov heads, so both models
+# architecturally OWN a markov head at all times -- but "owns a head" is not the
+# same as "the head is applied". Whether the head is LIVE is decided per method:
+#
+#   verify="tree"  -> sparked_tree_generate(..., markov_head=corrector_head)
+#                     corrector_head = the backbone's OWN markov head when the
+#                     method sets corrector="<backbone>_markov", else None.
+#                     markov_head=None  => build_sparked_tree branches
+#                       per-depth-independent -> markov head OFF (dormant).
+#                     markov_head=<head> => each node's children are top-k of
+#                       base_logits + W2@W1[parent_token] -> markov head ON.
+#   verify="chain" -> dspark_generate(...) uses model.sample_draft_tokens, which
+#                     applies self.markov_head INTRINSICALLY (always ON if the
+#                     model has one). No chain arm is configured in exp 2.
+#
+# So the naming maps to behavior as:  ".tree" = head OFF, ".markov.tree" = head
+# ON (the backbone's OWN head, native -- never a foreign/spliced head here).
+#
+# The confidence head (present on both checkpoints) is NEVER applied by any exp 2
+# arm: only dspark_generate (chain) uses it, and only when confidence_threshold
+# > 0. cfg default confidence_threshold=0.0 and there are no chain arms.
+#
+# Backbone block_size is intrinsic to each checkpoint (no runtime override); the
+# guard in load_backbones() asserts b7=7 / b16=16 (EXPECTED_BLOCK_SIZE). For a
+# dspark tree, depth_limit = block_size, so b7 trees reach depth 7 and b16 trees
+# reach depth 16.
+#
+# Shared by every arm: target=Qwen/Qwen3-4B (sdpa, bf16); draft_mode="dspark";
+# temperature=0.0 (greedy; tree build is greedy top-k regardless);
+# max_new_tokens=512; seed=0; tree_budget SWEPT over {64, 256} (each arm runs at
+# both); depth_report_limit=16.
+#
+#   method                    backbone / model_id                          eff  markov head            corrector           verify
+#                                                                           bs   (applied?)             (source)
+#   ------------------------  -------------------------------------------  ---  --------------------  ------------------  ------
+#   dspark_b7.tree            dspark_b7 / deepseek-ai/                       7   OFF (owned, dormant)  None                tree    <- markov-off control
+#                                        dspark_qwen3_4b_block7
+#   dspark_b7.markov.tree     dspark_b7 / deepseek-ai/                       7   ON  (native)          dspark_b7_markov    tree    <- HEADLINE
+#                                        dspark_qwen3_4b_block7                    b7's OWN head        (=b7's own head)
+#   dspark_b16.tree           dspark_b16 / shreybirmiwal/                   16   OFF (owned, dormant)  None                tree    <- markov-off control
+#                                         Qwen3-4B-DSpark-b16
+#   dspark_b16.markov.tree    dspark_b16 / shreybirmiwal/                   16   ON  (native)          dspark_b16_markov   tree    <- HEADLINE
+#                                         Qwen3-4B-DSpark-b16                      b16's OWN head       (=b16's own head)
+#
+# NAME-vs-BEHAVIOR asymmetry to note: a `.tree` DSpark arm still LOADS a model
+# that owns a markov head -- the head just is not passed in, so it does not touch
+# the tree. "DSpark with markov off" means dormant head, not absent head.
+# =========================================================================== #
+
 import argparse
 import json
 import os

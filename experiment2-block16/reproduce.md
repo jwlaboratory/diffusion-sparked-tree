@@ -34,6 +34,44 @@ from the corrector's contribution. The block-size effect is the **within-arm del
 between b7 and b16: `dspark_b16.markov.tree − dspark_b7.markov.tree` (headline) and
 `dspark_b16.tree − dspark_b7.tree` (control). The claim predicts both > 0.
 
+### Exact method settings (zero ambiguity)
+
+Verified against the code (`DDTree/run_experiment.py::build_method_callable`,
+`DDTree/sparked_tree.py`, `DDTree/model/dspark.py`). Every arm is **DSpark ×
+tree**; there are **no `.chain` arms and no DFlash arms** in experiment 2. Both
+checkpoints carry a `markov_rank=256` vanilla head, so **both models always own a
+markov head** — but a head is only *applied* when the method passes it as the
+corrector.
+
+| method | backbone (model_id) | kind | eff. `block_size` | markov head | corrector (source) | verify | tree_budget | temperature |
+|---|---|---|---|---|---|---|---|---|
+| `dspark_b7.tree` | `deepseek-ai/dspark_qwen3_4b_block7` | dspark | **7** | **OFF** (owned but dormant) | `None` | tree | {64, 256} swept | 0.0 |
+| `dspark_b7.markov.tree` | `deepseek-ai/dspark_qwen3_4b_block7` | dspark | **7** | **ON** (native — b7's *own* head) | `dspark_b7_markov` | tree | {64, 256} swept | 0.0 |
+| `dspark_b16.tree` | `shreybirmiwal/Qwen3-4B-DSpark-b16` | dspark | **16** | **OFF** (owned but dormant) | `None` | tree | {64, 256} swept | 0.0 |
+| `dspark_b16.markov.tree` | `shreybirmiwal/Qwen3-4B-DSpark-b16` | dspark | **16** | **ON** (native — b16's *own* head) | `dspark_b16_markov` | tree | {64, 256} swept | 0.0 |
+
+Shared by all four: target/verifier `Qwen/Qwen3-4B` (sdpa, bf16), `draft_mode="dspark"`,
+`max_new_tokens=512`, `seed=0`, `depth_report_limit=16`. For a dspark tree
+`depth_limit = block_size`, so b7 trees reach depth 7 and b16 trees reach depth 16.
+
+**Name ↔ behavior mapping (the known ambiguity, resolved for this repo):**
+- `.tree` (corrector `None`) → markov head **OFF**. `build_sparked_tree` branches
+  per-depth-independently; the loaded DSpark model still *owns* a head, it is just
+  never passed in, so it never touches the tree. "Markov off" = **dormant**, not absent.
+- `.markov.tree` (corrector = the backbone's own head) → markov head **ON**. Each
+  node's children are top-k of `base_logits + W2·W1[parent_token]`. The corrector
+  is always the **same checkpoint's own** head here — never a foreign/spliced head.
+- A `.chain` arm (none configured) would call `dspark_generate`, which uses the
+  model's markov head **intrinsically** (always on for chain). If you added one,
+  `dspark_b*.chain` would be markov-on by construction, with no way to turn it off.
+- **DFlash:** `draft_mode="dflash"` and a foreign-head `.markov.tree` splice are
+  supported by the code but **not exercised** in experiment 2 — both backbones are
+  DSpark and each uses only its own head. `dflash.py` / `model/dflash.py` are pulled
+  in only as base classes and timing helpers.
+- The **confidence head** (present on both checkpoints) is applied by **no** exp 2
+  arm: only `dspark_generate` (chain) uses it, and only when `confidence_threshold > 0`
+  (default `0.0`).
+
 **Caveat — the benefit is task-dependent.** A longer horizon only helps on tasks
 whose completions actually reach deep tree positions. The prior phase's notes
 (`old-experiments/experiments/RESULTS.md` §7) record that alpaca-style prompts never
