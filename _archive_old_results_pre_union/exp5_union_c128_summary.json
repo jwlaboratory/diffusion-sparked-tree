@@ -1,0 +1,1764 @@
+{
+  "config": {
+    "target": "Qwen/Qwen3-4B",
+    "tasks": [
+      [
+        "math500",
+        128
+      ],
+      [
+        "gsm8k",
+        128
+      ],
+      [
+        "aime24",
+        30
+      ],
+      [
+        "aime25",
+        30
+      ],
+      [
+        "humaneval",
+        164
+      ],
+      [
+        "mbpp",
+        128
+      ],
+      [
+        "livecodebench",
+        128
+      ],
+      [
+        "swe-bench",
+        128
+      ],
+      [
+        "mt-bench",
+        80
+      ],
+      [
+        "alpaca",
+        128
+      ]
+    ],
+    "tree_budgets": [
+      64,
+      128,
+      256
+    ],
+    "passes": [
+      "clean",
+      "instrumented"
+    ],
+    "temperature": 0.0,
+    "max_new_tokens": 2048,
+    "seed": 0,
+    "methods": {
+      "Autoregressive": {
+        "backbone": "dspark_b16",
+        "corrector": null,
+        "verify": "autoregressive",
+        "tree_kwargs": null
+      },
+      "DFlash": {
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "chain",
+        "tree_kwargs": null
+      },
+      "DSpark": {
+        "backbone": "dspark_b16",
+        "corrector": null,
+        "verify": "chain",
+        "tree_kwargs": null
+      },
+      "DDTree": {
+        "backbone": "dflash_b16",
+        "corrector": null,
+        "verify": "ddtree",
+        "tree_kwargs": null
+      },
+      "SparklingTree": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "best-first-precompute",
+          "beam_candidates": 128,
+          "max_fanout": 256
+        }
+      }
+    },
+    "phase_order": [
+      "draft_forward",
+      "candidate_build",
+      "candidate_pack",
+      "verify",
+      "walk_accept",
+      "kv_update",
+      "state_carry",
+      "unaccounted"
+    ],
+    "sharded": true,
+    "run_tag": "057f07ee",
+    "datasets_present": [
+      "aime24",
+      "aime25",
+      "alpaca",
+      "gsm8k",
+      "humaneval",
+      "livecodebench",
+      "mbpp",
+      "mt-bench"
+    ],
+    "units_merged": 28
+  },
+  "results": {
+    "clean": {
+      "64": {
+        "aime24": {
+          "Autoregressive": {
+            "tps_decode": 48.709101175531785,
+            "ttft": 0.023315176000009312,
+            "output_tokens": 54777,
+            "rounds": 54747,
+            "decode_time": 1124.5742310580004,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 228.40306103985344,
+            "ttft": 0.02404506236666369,
+            "output_tokens": 56346,
+            "rounds": 7831,
+            "decode_time": 246.6954678430003,
+            "mean_accept": 7.208913293321415,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 187.99930868252753,
+            "ttft": 0.02378862613331118,
+            "output_tokens": 54617,
+            "rounds": 8728,
+            "decode_time": 290.5170257419997,
+            "mean_accept": 6.270050412465628,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 282.792729714526,
+            "ttft": 0.02399547783336402,
+            "output_tokens": 55178,
+            "rounds": 6124,
+            "decode_time": 195.1181703140005,
+            "mean_accept": 9.02694317439582,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 231.78143216372405,
+            "ttft": 0.023761896133328263,
+            "output_tokens": 53568,
+            "rounds": 6621,
+            "decode_time": 231.11428512600196,
+            "mean_accept": 8.105271107083523,
+            "budget_invariant": false
+          }
+        },
+        "aime25": {
+          "Autoregressive": {
+            "tps_decode": 48.982337460800615,
+            "ttft": 0.02446080219999421,
+            "output_tokens": 52642,
+            "rounds": 52612,
+            "decode_time": 1074.7139219750002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 215.47974801974016,
+            "ttft": 0.02423170753333134,
+            "output_tokens": 54189,
+            "rounds": 7872,
+            "decode_time": 251.4807098950001,
+            "mean_accept": 6.893927845528455,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 178.2402836608717,
+            "ttft": 0.02463832669999372,
+            "output_tokens": 53201,
+            "rounds": 8892,
+            "decode_time": 298.47910308099995,
+            "mean_accept": 5.995389113810166,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 270.6559215885704,
+            "ttft": 0.0243558618333509,
+            "output_tokens": 54820,
+            "rounds": 6181,
+            "decode_time": 202.54498655799966,
+            "mean_accept": 8.892088658793076,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 224.4982049703139,
+            "ttft": 0.024159256999981456,
+            "output_tokens": 54758,
+            "rounds": 6910,
+            "decode_time": 243.91286338900045,
+            "mean_accept": 7.938060781476121,
+            "budget_invariant": false
+          }
+        },
+        "alpaca": {
+          "Autoregressive": {
+            "tps_decode": 51.391415855968425,
+            "ttft": 0.02182334997656432,
+            "output_tokens": 45220,
+            "rounds": 45092,
+            "decode_time": 879.9134884070003,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 92.31240418505989,
+            "ttft": 0.022712776429695214,
+            "output_tokens": 44366,
+            "rounds": 15815,
+            "decode_time": 480.60713391299936,
+            "mean_accept": 2.8121403730635475,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 113.35664889322767,
+            "ttft": 0.022694359484369153,
+            "output_tokens": 44092,
+            "rounds": 12290,
+            "decode_time": 388.96703837399883,
+            "mean_accept": 3.5993490642799024,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 131.86058646469553,
+            "ttft": 0.02244283967969629,
+            "output_tokens": 43593,
+            "rounds": 10552,
+            "decode_time": 330.59916665600167,
+            "mean_accept": 4.144806671721001,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 147.54374855853618,
+            "ttft": 0.022439736585926795,
+            "output_tokens": 43337,
+            "rounds": 8609,
+            "decode_time": 293.72305111799824,
+            "mean_accept": 5.048669996515275,
+            "budget_invariant": false
+          }
+        },
+        "gsm8k": {
+          "Autoregressive": {
+            "tps_decode": 41.60855581598715,
+            "ttft": 0.027652107164058415,
+            "output_tokens": 37923,
+            "rounds": 37795,
+            "decode_time": 911.4231257559999,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 167.3904715151381,
+            "ttft": 0.02844492874218829,
+            "output_tokens": 37643,
+            "rounds": 5918,
+            "decode_time": 224.88137860699987,
+            "mean_accept": 6.38036498817168,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 193.96359599014025,
+            "ttft": 0.028492499468748322,
+            "output_tokens": 37719,
+            "rounds": 4932,
+            "decode_time": 194.46432619200033,
+            "mean_accept": 7.671127331711273,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 212.40245218817023,
+            "ttft": 0.02853004314844476,
+            "output_tokens": 38090,
+            "rounds": 4608,
+            "decode_time": 179.32937971100046,
+            "mean_accept": 8.29296875,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 225.64684207464387,
+            "ttft": 0.028269745750005626,
+            "output_tokens": 37794,
+            "rounds": 3941,
+            "decode_time": 167.4918188640006,
+            "mean_accept": 9.62116214158843,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "Autoregressive": {
+            "tps_decode": 44.503611761521924,
+            "ttft": 0.02549799281098157,
+            "output_tokens": 72096,
+            "rounds": 71932,
+            "decode_time": 1620.0033468370002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 186.9351404041357,
+            "ttft": 0.02598434472561104,
+            "output_tokens": 72735,
+            "rounds": 11243,
+            "decode_time": 389.0921730540013,
+            "mean_accept": 6.48385662189807,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 179.01878131133444,
+            "ttft": 0.026206110548777244,
+            "output_tokens": 71317,
+            "rounds": 11022,
+            "decode_time": 398.3771952730002,
+            "mean_accept": 6.485937216476138,
+            "budget_invariant": true
+          }
+        },
+        "livecodebench": {
+          "Autoregressive": {
+            "tps_decode": 38.16580403406931,
+            "ttft": 0.030049559257810332,
+            "output_tokens": 43302,
+            "rounds": 43174,
+            "decode_time": 1134.5758617149997,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 179.34328461192865,
+            "ttft": 0.030734901445315876,
+            "output_tokens": 44115,
+            "rounds": 6089,
+            "decode_time": 245.9807742199999,
+            "mean_accept": 7.269995073082608,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 169.00808297869528,
+            "ttft": 0.03071976165624668,
+            "output_tokens": 46718,
+            "rounds": 6558,
+            "decode_time": 276.42464890800017,
+            "mean_accept": 7.142726440988106,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 217.89620797159645,
+            "ttft": 0.030656994531248927,
+            "output_tokens": 41879,
+            "rounds": 4705,
+            "decode_time": 192.19701154899894,
+            "mean_accept": 8.94048884165781,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 183.85738726476373,
+            "ttft": 0.03036255291406853,
+            "output_tokens": 41196,
+            "rounds": 4990,
+            "decode_time": 224.06497020799998,
+            "mean_accept": 8.288977955911824,
+            "budget_invariant": false
+          }
+        },
+        "mbpp": {
+          "Autoregressive": {
+            "tps_decode": 48.7563653986267,
+            "ttft": 0.022983918593742658,
+            "output_tokens": 42525,
+            "rounds": 42397,
+            "decode_time": 872.1938079740002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 181.36727081485333,
+            "ttft": 0.023968669390620922,
+            "output_tokens": 42243,
+            "rounds": 7272,
+            "decode_time": 232.91412949099993,
+            "mean_accept": 5.826320132013201,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 181.89586332795554,
+            "ttft": 0.023727536914064595,
+            "output_tokens": 42509,
+            "rounds": 7014,
+            "decode_time": 233.69965222000076,
+            "mean_accept": 6.0802680353578555,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 247.20073812130443,
+            "ttft": 0.023082973570318188,
+            "output_tokens": 41901,
+            "rounds": 5362,
+            "decode_time": 169.5019210640005,
+            "mean_accept": 7.831033196568445,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 227.35607895281544,
+            "ttft": 0.022926004867176886,
+            "output_tokens": 43156,
+            "rounds": 5456,
+            "decode_time": 189.81678518900048,
+            "mean_accept": 7.933101173020527,
+            "budget_invariant": false
+          }
+        },
+        "mt-bench": {
+          "Autoregressive": {
+            "tps_decode": 58.275793882153174,
+            "ttft": 0.019608140175010468,
+            "output_tokens": 35635,
+            "rounds": 35555,
+            "decode_time": 611.4888811650001,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 120.01731531559241,
+            "ttft": 0.020146890650002015,
+            "output_tokens": 36490,
+            "rounds": 11312,
+            "decode_time": 304.0394621729994,
+            "mean_accept": 3.232142857142857,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 135.74997914975145,
+            "ttft": 0.02018697233750526,
+            "output_tokens": 37010,
+            "rounds": 9659,
+            "decode_time": 272.63355936999983,
+            "mean_accept": 3.8392173102805676,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 169.8207342318089,
+            "ttft": 0.020281495562502982,
+            "output_tokens": 37897,
+            "rounds": 7989,
+            "decode_time": 223.15885142900038,
+            "mean_accept": 4.753035423707598,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 169.36539906208603,
+            "ttft": 0.02021252412500587,
+            "output_tokens": 36677,
+            "rounds": 7090,
+            "decode_time": 216.55544876999897,
+            "mean_accept": 5.182228490832158,
+            "budget_invariant": false
+          }
+        }
+      },
+      "128": {
+        "aime24": {
+          "Autoregressive": {
+            "tps_decode": 48.709101175531785,
+            "ttft": 0.023315176000009312,
+            "output_tokens": 54777,
+            "rounds": 54747,
+            "decode_time": 1124.5742310580004,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 228.40306103985344,
+            "ttft": 0.02404506236666369,
+            "output_tokens": 56346,
+            "rounds": 7831,
+            "decode_time": 246.6954678430003,
+            "mean_accept": 7.208913293321415,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 187.99930868252753,
+            "ttft": 0.02378862613331118,
+            "output_tokens": 54617,
+            "rounds": 8728,
+            "decode_time": 290.5170257419997,
+            "mean_accept": 6.270050412465628,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 288.85440864906036,
+            "ttft": 0.025023572266627526,
+            "output_tokens": 55243,
+            "rounds": 5853,
+            "decode_time": 191.24859564500093,
+            "mean_accept": 9.462497864343073,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 234.35428296612685,
+            "ttft": 0.02484005813330441,
+            "output_tokens": 54002,
+            "rounds": 6362,
+            "decode_time": 230.42890156099838,
+            "mean_accept": 8.512417478780257,
+            "budget_invariant": false
+          }
+        },
+        "aime25": {
+          "Autoregressive": {
+            "tps_decode": 48.982337460800615,
+            "ttft": 0.02446080219999421,
+            "output_tokens": 52642,
+            "rounds": 52612,
+            "decode_time": 1074.7139219750002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 215.47974801974016,
+            "ttft": 0.02423170753333134,
+            "output_tokens": 54189,
+            "rounds": 7872,
+            "decode_time": 251.4807098950001,
+            "mean_accept": 6.893927845528455,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 178.2402836608717,
+            "ttft": 0.02463832669999372,
+            "output_tokens": 53201,
+            "rounds": 8892,
+            "decode_time": 298.47910308099995,
+            "mean_accept": 5.995389113810166,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 275.49937924631325,
+            "ttft": 0.024481496633370625,
+            "output_tokens": 54715,
+            "rounds": 6037,
+            "decode_time": 198.60298832499893,
+            "mean_accept": 9.082656948815638,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 230.15490981608127,
+            "ttft": 0.02455957046668118,
+            "output_tokens": 54610,
+            "rounds": 6506,
+            "decode_time": 237.27497294600107,
+            "mean_accept": 8.410544113126345,
+            "budget_invariant": false
+          }
+        },
+        "alpaca": {
+          "Autoregressive": {
+            "tps_decode": 51.391415855968425,
+            "ttft": 0.02182334997656432,
+            "output_tokens": 45220,
+            "rounds": 45092,
+            "decode_time": 879.9134884070003,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 92.31240418505989,
+            "ttft": 0.022712776429695214,
+            "output_tokens": 44366,
+            "rounds": 15815,
+            "decode_time": 480.60713391299936,
+            "mean_accept": 2.8121403730635475,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 113.35664889322767,
+            "ttft": 0.022694359484369153,
+            "output_tokens": 44092,
+            "rounds": 12290,
+            "decode_time": 388.96703837399883,
+            "mean_accept": 3.5993490642799024,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 138.05168750909075,
+            "ttft": 0.022748454671887686,
+            "output_tokens": 44231,
+            "rounds": 10098,
+            "decode_time": 320.39448990500296,
+            "mean_accept": 4.3933452168746285,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 151.63698494966744,
+            "ttft": 0.022792932390640175,
+            "output_tokens": 44534,
+            "rounds": 8321,
+            "decode_time": 293.6882450859998,
+            "mean_accept": 5.3706285302247325,
+            "budget_invariant": false
+          }
+        },
+        "gsm8k": {
+          "Autoregressive": {
+            "tps_decode": 41.60855581598715,
+            "ttft": 0.027652107164058415,
+            "output_tokens": 37923,
+            "rounds": 37795,
+            "decode_time": 911.4231257559999,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 167.3904715151381,
+            "ttft": 0.02844492874218829,
+            "output_tokens": 37643,
+            "rounds": 5918,
+            "decode_time": 224.88137860699987,
+            "mean_accept": 6.38036498817168,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 193.96359599014025,
+            "ttft": 0.028492499468748322,
+            "output_tokens": 37719,
+            "rounds": 4932,
+            "decode_time": 194.46432619200033,
+            "mean_accept": 7.671127331711273,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 221.3973319610358,
+            "ttft": 0.02863402358593703,
+            "output_tokens": 37538,
+            "rounds": 4341,
+            "decode_time": 169.55037202799895,
+            "mean_accept": 8.67657221838286,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 228.8273738948738,
+            "ttft": 0.028468420937507233,
+            "output_tokens": 37581,
+            "rounds": 3741,
+            "decode_time": 164.23297335599887,
+            "mean_accept": 10.077519379844961,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "Autoregressive": {
+            "tps_decode": 44.503611761521924,
+            "ttft": 0.02549799281098157,
+            "output_tokens": 72096,
+            "rounds": 71932,
+            "decode_time": 1620.0033468370002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 186.9351404041357,
+            "ttft": 0.02598434472561104,
+            "output_tokens": 72735,
+            "rounds": 11243,
+            "decode_time": 389.0921730540013,
+            "mean_accept": 6.48385662189807,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 179.01878131133444,
+            "ttft": 0.026206110548777244,
+            "output_tokens": 71317,
+            "rounds": 11022,
+            "decode_time": 398.3771952730002,
+            "mean_accept": 6.485937216476138,
+            "budget_invariant": true
+          }
+        },
+        "livecodebench": {
+          "Autoregressive": {
+            "tps_decode": 38.16580403406931,
+            "ttft": 0.030049559257810332,
+            "output_tokens": 43302,
+            "rounds": 43174,
+            "decode_time": 1134.5758617149997,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 179.34328461192865,
+            "ttft": 0.030734901445315876,
+            "output_tokens": 44115,
+            "rounds": 6089,
+            "decode_time": 245.9807742199999,
+            "mean_accept": 7.269995073082608,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 169.00808297869528,
+            "ttft": 0.03071976165624668,
+            "output_tokens": 46718,
+            "rounds": 6558,
+            "decode_time": 276.42464890800017,
+            "mean_accept": 7.142726440988106,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 217.41115095713047,
+            "ttft": 0.030817539117165893,
+            "output_tokens": 41126,
+            "rounds": 4577,
+            "decode_time": 189.16233053800124,
+            "mean_accept": 9.023377758357002,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 187.44048089237575,
+            "ttft": 0.03061815078125818,
+            "output_tokens": 41649,
+            "rounds": 4762,
+            "decode_time": 222.1985336450025,
+            "mean_accept": 8.780554388912222,
+            "budget_invariant": false
+          }
+        },
+        "mbpp": {
+          "Autoregressive": {
+            "tps_decode": 48.7563653986267,
+            "ttft": 0.022983918593742658,
+            "output_tokens": 42525,
+            "rounds": 42397,
+            "decode_time": 872.1938079740002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 181.36727081485333,
+            "ttft": 0.023968669390620922,
+            "output_tokens": 42243,
+            "rounds": 7272,
+            "decode_time": 232.91412949099993,
+            "mean_accept": 5.826320132013201,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 181.89586332795554,
+            "ttft": 0.023727536914064595,
+            "output_tokens": 42509,
+            "rounds": 7014,
+            "decode_time": 233.69965222000076,
+            "mean_accept": 6.0802680353578555,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 253.10764561032292,
+            "ttft": 0.023798894499989842,
+            "output_tokens": 42497,
+            "rounds": 5114,
+            "decode_time": 167.90089409399798,
+            "mean_accept": 8.332029722330857,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 222.01607463713503,
+            "ttft": 0.023470897296888893,
+            "output_tokens": 42729,
+            "rounds": 5188,
+            "decode_time": 192.45903734599688,
+            "mean_accept": 8.26040863531226,
+            "budget_invariant": false
+          }
+        },
+        "mt-bench": {
+          "Autoregressive": {
+            "tps_decode": 58.275793882153174,
+            "ttft": 0.019608140175010468,
+            "output_tokens": 35635,
+            "rounds": 35555,
+            "decode_time": 611.4888811650001,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 120.01731531559241,
+            "ttft": 0.020146890650002015,
+            "output_tokens": 36490,
+            "rounds": 11312,
+            "decode_time": 304.0394621729994,
+            "mean_accept": 3.232142857142857,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 135.74997914975145,
+            "ttft": 0.02018697233750526,
+            "output_tokens": 37010,
+            "rounds": 9659,
+            "decode_time": 272.63355936999983,
+            "mean_accept": 3.8392173102805676,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 180.70068486463845,
+            "ttft": 0.02033783658750963,
+            "output_tokens": 37901,
+            "rounds": 7428,
+            "decode_time": 209.74463947600066,
+            "mean_accept": 5.113758750673129,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 176.13074921697861,
+            "ttft": 0.020206929200003287,
+            "output_tokens": 37660,
+            "rounds": 6761,
+            "decode_time": 213.81842845400024,
+            "mean_accept": 5.580091702410886,
+            "budget_invariant": false
+          }
+        }
+      },
+      "256": {
+        "aime24": {
+          "Autoregressive": {
+            "tps_decode": 48.709101175531785,
+            "ttft": 0.023315176000009312,
+            "output_tokens": 54777,
+            "rounds": 54747,
+            "decode_time": 1124.5742310580004,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 228.40306103985344,
+            "ttft": 0.02404506236666369,
+            "output_tokens": 56346,
+            "rounds": 7831,
+            "decode_time": 246.6954678430003,
+            "mean_accept": 7.208913293321415,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 187.99930868252753,
+            "ttft": 0.02378862613331118,
+            "output_tokens": 54617,
+            "rounds": 8728,
+            "decode_time": 290.5170257419997,
+            "mean_accept": 6.270050412465628,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 296.5151212894964,
+            "ttft": 0.02361583573332003,
+            "output_tokens": 54003,
+            "rounds": 5558,
+            "decode_time": 182.12561897399928,
+            "mean_accept": 9.736056135300467,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 237.37028030194207,
+            "ttft": 0.023957544700033397,
+            "output_tokens": 55531,
+            "rounds": 6156,
+            "decode_time": 233.94251348299758,
+            "mean_accept": 9.045808966861598,
+            "budget_invariant": false
+          }
+        },
+        "aime25": {
+          "Autoregressive": {
+            "tps_decode": 48.982337460800615,
+            "ttft": 0.02446080219999421,
+            "output_tokens": 52642,
+            "rounds": 52612,
+            "decode_time": 1074.7139219750002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 215.47974801974016,
+            "ttft": 0.02423170753333134,
+            "output_tokens": 54189,
+            "rounds": 7872,
+            "decode_time": 251.4807098950001,
+            "mean_accept": 6.893927845528455,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 178.2402836608717,
+            "ttft": 0.02463832669999372,
+            "output_tokens": 53201,
+            "rounds": 8892,
+            "decode_time": 298.47910308099995,
+            "mean_accept": 5.995389113810166,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 289.48170265182927,
+            "ttft": 0.024132057500006947,
+            "output_tokens": 55733,
+            "rounds": 5822,
+            "decode_time": 192.5268488110014,
+            "mean_accept": 9.592579869460666,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 226.9994888425033,
+            "ttft": 0.023841220533343706,
+            "output_tokens": 56374,
+            "rounds": 6446,
+            "decode_time": 248.34417155500023,
+            "mean_accept": 8.76497052435619,
+            "budget_invariant": false
+          }
+        },
+        "alpaca": {
+          "Autoregressive": {
+            "tps_decode": 51.391415855968425,
+            "ttft": 0.02182334997656432,
+            "output_tokens": 45220,
+            "rounds": 45092,
+            "decode_time": 879.9134884070003,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 92.31240418505989,
+            "ttft": 0.022712776429695214,
+            "output_tokens": 44366,
+            "rounds": 15815,
+            "decode_time": 480.60713391299936,
+            "mean_accept": 2.8121403730635475,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 113.35664889322767,
+            "ttft": 0.022694359484369153,
+            "output_tokens": 44092,
+            "rounds": 12290,
+            "decode_time": 388.96703837399883,
+            "mean_accept": 3.5993490642799024,
+            "budget_invariant": true
+          }
+        },
+        "gsm8k": {
+          "Autoregressive": {
+            "tps_decode": 41.60855581598715,
+            "ttft": 0.027652107164058415,
+            "output_tokens": 37923,
+            "rounds": 37795,
+            "decode_time": 911.4231257559999,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 167.3904715151381,
+            "ttft": 0.02844492874218829,
+            "output_tokens": 37643,
+            "rounds": 5918,
+            "decode_time": 224.88137860699987,
+            "mean_accept": 6.38036498817168,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 193.96359599014025,
+            "ttft": 0.028492499468748322,
+            "output_tokens": 37719,
+            "rounds": 4932,
+            "decode_time": 194.46432619200033,
+            "mean_accept": 7.671127331711273,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 227.79360676485615,
+            "ttft": 0.028472528468771685,
+            "output_tokens": 37952,
+            "rounds": 4261,
+            "decode_time": 166.60695854900177,
+            "mean_accept": 8.937573339591646,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 222.4622029964962,
+            "ttft": 0.02819604006251808,
+            "output_tokens": 38281,
+            "rounds": 3712,
+            "decode_time": 172.07866992400022,
+            "mean_accept": 10.345096982758621,
+            "budget_invariant": false
+          }
+        },
+        "humaneval": {
+          "Autoregressive": {
+            "tps_decode": 44.503611761521924,
+            "ttft": 0.02549799281098157,
+            "output_tokens": 72096,
+            "rounds": 71932,
+            "decode_time": 1620.0033468370002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 186.9351404041357,
+            "ttft": 0.02598434472561104,
+            "output_tokens": 72735,
+            "rounds": 11243,
+            "decode_time": 389.0921730540013,
+            "mean_accept": 6.48385662189807,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 179.01878131133444,
+            "ttft": 0.026206110548777244,
+            "output_tokens": 71317,
+            "rounds": 11022,
+            "decode_time": 398.3771952730002,
+            "mean_accept": 6.485937216476138,
+            "budget_invariant": true
+          }
+        },
+        "livecodebench": {
+          "Autoregressive": {
+            "tps_decode": 38.16580403406931,
+            "ttft": 0.030049559257810332,
+            "output_tokens": 43302,
+            "rounds": 43174,
+            "decode_time": 1134.5758617149997,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 179.34328461192865,
+            "ttft": 0.030734901445315876,
+            "output_tokens": 44115,
+            "rounds": 6089,
+            "decode_time": 245.9807742199999,
+            "mean_accept": 7.269995073082608,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 169.00808297869528,
+            "ttft": 0.03071976165624668,
+            "output_tokens": 46718,
+            "rounds": 6558,
+            "decode_time": 276.42464890800017,
+            "mean_accept": 7.142726440988106,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 226.5452792429992,
+            "ttft": 0.030897947609364707,
+            "output_tokens": 40464,
+            "rounds": 4304,
+            "decode_time": 178.61330033099966,
+            "mean_accept": 9.447258364312267,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 191.86042922946527,
+            "ttft": 0.030414868500002967,
+            "output_tokens": 48404,
+            "rounds": 5012,
+            "decode_time": 252.28756234100138,
+            "mean_accept": 9.693136472466081,
+            "budget_invariant": false
+          }
+        },
+        "mbpp": {
+          "Autoregressive": {
+            "tps_decode": 48.7563653986267,
+            "ttft": 0.022983918593742658,
+            "output_tokens": 42525,
+            "rounds": 42397,
+            "decode_time": 872.1938079740002,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 181.36727081485333,
+            "ttft": 0.023968669390620922,
+            "output_tokens": 42243,
+            "rounds": 7272,
+            "decode_time": 232.91412949099993,
+            "mean_accept": 5.826320132013201,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 181.89586332795554,
+            "ttft": 0.023727536914064595,
+            "output_tokens": 42509,
+            "rounds": 7014,
+            "decode_time": 233.69965222000076,
+            "mean_accept": 6.0802680353578555,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 274.78390382840746,
+            "ttft": 0.022812388320350152,
+            "output_tokens": 42132,
+            "rounds": 4854,
+            "decode_time": 153.32775833299866,
+            "mean_accept": 8.703131437989287,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 232.67387825631687,
+            "ttft": 0.022510357890631383,
+            "output_tokens": 44434,
+            "rounds": 5136,
+            "decode_time": 190.97115814200197,
+            "mean_accept": 8.6773753894081,
+            "budget_invariant": false
+          }
+        },
+        "mt-bench": {
+          "Autoregressive": {
+            "tps_decode": 58.275793882153174,
+            "ttft": 0.019608140175010468,
+            "output_tokens": 35635,
+            "rounds": 35555,
+            "decode_time": 611.4888811650001,
+            "mean_accept": 1,
+            "budget_invariant": true
+          },
+          "DFlash": {
+            "tps_decode": 120.01731531559241,
+            "ttft": 0.020146890650002015,
+            "output_tokens": 36490,
+            "rounds": 11312,
+            "decode_time": 304.0394621729994,
+            "mean_accept": 3.232142857142857,
+            "budget_invariant": true
+          },
+          "DSpark": {
+            "tps_decode": 135.74997914975145,
+            "ttft": 0.02018697233750526,
+            "output_tokens": 37010,
+            "rounds": 9659,
+            "decode_time": 272.63355936999983,
+            "mean_accept": 3.8392173102805676,
+            "budget_invariant": true
+          },
+          "DDTree": {
+            "tps_decode": 192.195583606271,
+            "ttft": 0.019663983862500345,
+            "output_tokens": 38378,
+            "rounds": 7205,
+            "decode_time": 199.68200767100143,
+            "mean_accept": 5.3392088827203334,
+            "budget_invariant": false
+          },
+          "SparklingTree": {
+            "tps_decode": 180.24255043972175,
+            "ttft": 0.019394731512511497,
+            "output_tokens": 37685,
+            "rounds": 6441,
+            "decode_time": 209.07937614100138,
+            "mean_accept": 5.863841018475392,
+            "budget_invariant": false
+          }
+        }
+      }
+    },
+    "instrumented": {
+      "64": {
+        "aime24": {},
+        "aime25": {},
+        "alpaca": {},
+        "gsm8k": {},
+        "humaneval": {},
+        "livecodebench": {},
+        "mbpp": {},
+        "mt-bench": {}
+      },
+      "128": {
+        "aime24": {},
+        "aime25": {},
+        "alpaca": {},
+        "gsm8k": {},
+        "humaneval": {},
+        "livecodebench": {},
+        "mbpp": {},
+        "mt-bench": {}
+      },
+      "256": {
+        "aime24": {},
+        "aime25": {},
+        "alpaca": {},
+        "gsm8k": {},
+        "humaneval": {},
+        "livecodebench": {},
+        "mbpp": {},
+        "mt-bench": {}
+      }
+    }
+  },
+  "timing": {
+    "64": {
+      "Autoregressive": {
+        "tps_clean": 46.67946171127328,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 48.709101175531785
+          },
+          "aime25": {
+            "tps_clean": 48.982337460800615
+          },
+          "alpaca": {
+            "tps_clean": 51.391415855968425
+          },
+          "gsm8k": {
+            "tps_clean": 41.60855581598715
+          },
+          "humaneval": {
+            "tps_clean": 44.503611761521924
+          },
+          "livecodebench": {
+            "tps_clean": 38.16580403406931
+          },
+          "mbpp": {
+            "tps_clean": 48.7563653986267
+          },
+          "mt-bench": {
+            "tps_clean": 58.275793882153174
+          }
+        }
+      },
+      "DFlash": {
+        "tps_clean": 163.37434563470313,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 228.40306103985344
+          },
+          "aime25": {
+            "tps_clean": 215.47974801974016
+          },
+          "alpaca": {
+            "tps_clean": 92.31240418505989
+          },
+          "gsm8k": {
+            "tps_clean": 167.3904715151381
+          },
+          "humaneval": {
+            "tps_clean": 186.9351404041357
+          },
+          "livecodebench": {
+            "tps_clean": 179.34328461192865
+          },
+          "mbpp": {
+            "tps_clean": 181.36727081485333
+          },
+          "mt-bench": {
+            "tps_clean": 120.01731531559241
+          }
+        }
+      },
+      "DSpark": {
+        "tps_clean": 164.50933081773752,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 187.99930868252753
+          },
+          "aime25": {
+            "tps_clean": 178.2402836608717
+          },
+          "alpaca": {
+            "tps_clean": 113.35664889322767
+          },
+          "gsm8k": {
+            "tps_clean": 193.96359599014025
+          },
+          "humaneval": {
+            "tps_clean": 179.01878131133444
+          },
+          "livecodebench": {
+            "tps_clean": 169.00808297869528
+          },
+          "mbpp": {
+            "tps_clean": 181.89586332795554
+          },
+          "mt-bench": {
+            "tps_clean": 135.74997914975145
+          }
+        }
+      },
+      "DDTree": {
+        "tps_clean": 209.9622149161556,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 282.792729714526
+          },
+          "aime25": {
+            "tps_clean": 270.6559215885704
+          },
+          "alpaca": {
+            "tps_clean": 131.86058646469553
+          },
+          "gsm8k": {
+            "tps_clean": 212.40245218817023
+          },
+          "livecodebench": {
+            "tps_clean": 217.89620797159645
+          },
+          "mbpp": {
+            "tps_clean": 247.20073812130443
+          },
+          "mt-bench": {
+            "tps_clean": 169.8207342318089
+          }
+        }
+      },
+      "SparklingTree": {
+        "tps_clean": 198.18096487680853,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 231.78143216372405
+          },
+          "aime25": {
+            "tps_clean": 224.4982049703139
+          },
+          "alpaca": {
+            "tps_clean": 147.54374855853618
+          },
+          "gsm8k": {
+            "tps_clean": 225.64684207464387
+          },
+          "livecodebench": {
+            "tps_clean": 183.85738726476373
+          },
+          "mbpp": {
+            "tps_clean": 227.35607895281544
+          },
+          "mt-bench": {
+            "tps_clean": 169.36539906208603
+          }
+        }
+      }
+    },
+    "128": {
+      "Autoregressive": {
+        "tps_clean": 46.67946171127328,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 48.709101175531785
+          },
+          "aime25": {
+            "tps_clean": 48.982337460800615
+          },
+          "alpaca": {
+            "tps_clean": 51.391415855968425
+          },
+          "gsm8k": {
+            "tps_clean": 41.60855581598715
+          },
+          "humaneval": {
+            "tps_clean": 44.503611761521924
+          },
+          "livecodebench": {
+            "tps_clean": 38.16580403406931
+          },
+          "mbpp": {
+            "tps_clean": 48.7563653986267
+          },
+          "mt-bench": {
+            "tps_clean": 58.275793882153174
+          }
+        }
+      },
+      "DFlash": {
+        "tps_clean": 163.37434563470313,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 228.40306103985344
+          },
+          "aime25": {
+            "tps_clean": 215.47974801974016
+          },
+          "alpaca": {
+            "tps_clean": 92.31240418505989
+          },
+          "gsm8k": {
+            "tps_clean": 167.3904715151381
+          },
+          "humaneval": {
+            "tps_clean": 186.9351404041357
+          },
+          "livecodebench": {
+            "tps_clean": 179.34328461192865
+          },
+          "mbpp": {
+            "tps_clean": 181.36727081485333
+          },
+          "mt-bench": {
+            "tps_clean": 120.01731531559241
+          }
+        }
+      },
+      "DSpark": {
+        "tps_clean": 164.50933081773752,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 187.99930868252753
+          },
+          "aime25": {
+            "tps_clean": 178.2402836608717
+          },
+          "alpaca": {
+            "tps_clean": 113.35664889322767
+          },
+          "gsm8k": {
+            "tps_clean": 193.96359599014025
+          },
+          "humaneval": {
+            "tps_clean": 179.01878131133444
+          },
+          "livecodebench": {
+            "tps_clean": 169.00808297869528
+          },
+          "mbpp": {
+            "tps_clean": 181.89586332795554
+          },
+          "mt-bench": {
+            "tps_clean": 135.74997914975145
+          }
+        }
+      },
+      "DDTree": {
+        "tps_clean": 216.54228307782222,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 288.85440864906036
+          },
+          "aime25": {
+            "tps_clean": 275.49937924631325
+          },
+          "alpaca": {
+            "tps_clean": 138.05168750909075
+          },
+          "gsm8k": {
+            "tps_clean": 221.3973319610358
+          },
+          "livecodebench": {
+            "tps_clean": 217.41115095713047
+          },
+          "mbpp": {
+            "tps_clean": 253.10764561032292
+          },
+          "mt-bench": {
+            "tps_clean": 180.70068486463845
+          }
+        }
+      },
+      "SparklingTree": {
+        "tps_clean": 201.2513867538724,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 234.35428296612685
+          },
+          "aime25": {
+            "tps_clean": 230.15490981608127
+          },
+          "alpaca": {
+            "tps_clean": 151.63698494966744
+          },
+          "gsm8k": {
+            "tps_clean": 228.8273738948738
+          },
+          "livecodebench": {
+            "tps_clean": 187.44048089237575
+          },
+          "mbpp": {
+            "tps_clean": 222.01607463713503
+          },
+          "mt-bench": {
+            "tps_clean": 176.13074921697861
+          }
+        }
+      }
+    },
+    "256": {
+      "Autoregressive": {
+        "tps_clean": 46.67946171127328,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 48.709101175531785
+          },
+          "aime25": {
+            "tps_clean": 48.982337460800615
+          },
+          "alpaca": {
+            "tps_clean": 51.391415855968425
+          },
+          "gsm8k": {
+            "tps_clean": 41.60855581598715
+          },
+          "humaneval": {
+            "tps_clean": 44.503611761521924
+          },
+          "livecodebench": {
+            "tps_clean": 38.16580403406931
+          },
+          "mbpp": {
+            "tps_clean": 48.7563653986267
+          },
+          "mt-bench": {
+            "tps_clean": 58.275793882153174
+          }
+        }
+      },
+      "DFlash": {
+        "tps_clean": 163.37434563470313,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 228.40306103985344
+          },
+          "aime25": {
+            "tps_clean": 215.47974801974016
+          },
+          "alpaca": {
+            "tps_clean": 92.31240418505989
+          },
+          "gsm8k": {
+            "tps_clean": 167.3904715151381
+          },
+          "humaneval": {
+            "tps_clean": 186.9351404041357
+          },
+          "livecodebench": {
+            "tps_clean": 179.34328461192865
+          },
+          "mbpp": {
+            "tps_clean": 181.36727081485333
+          },
+          "mt-bench": {
+            "tps_clean": 120.01731531559241
+          }
+        }
+      },
+      "DSpark": {
+        "tps_clean": 164.50933081773752,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 187.99930868252753
+          },
+          "aime25": {
+            "tps_clean": 178.2402836608717
+          },
+          "alpaca": {
+            "tps_clean": 113.35664889322767
+          },
+          "gsm8k": {
+            "tps_clean": 193.96359599014025
+          },
+          "humaneval": {
+            "tps_clean": 179.01878131133444
+          },
+          "livecodebench": {
+            "tps_clean": 169.00808297869528
+          },
+          "mbpp": {
+            "tps_clean": 181.89586332795554
+          },
+          "mt-bench": {
+            "tps_clean": 135.74997914975145
+          }
+        }
+      },
+      "DDTree": {
+        "tps_clean": 250.41139345246603,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 296.5151212894964
+          },
+          "aime25": {
+            "tps_clean": 289.48170265182927
+          },
+          "gsm8k": {
+            "tps_clean": 227.79360676485615
+          },
+          "livecodebench": {
+            "tps_clean": 226.5452792429992
+          },
+          "mbpp": {
+            "tps_clean": 274.78390382840746
+          },
+          "mt-bench": {
+            "tps_clean": 192.195583606271
+          }
+        }
+      },
+      "SparklingTree": {
+        "tps_clean": 214.82226870931677,
+        "tps_instrumented": null,
+        "instrumentation_tax": null,
+        "dominant_phase": null,
+        "dominant_share": null,
+        "per_dataset": {
+          "aime24": {
+            "tps_clean": 237.37028030194207
+          },
+          "aime25": {
+            "tps_clean": 226.9994888425033
+          },
+          "gsm8k": {
+            "tps_clean": 222.4622029964962
+          },
+          "livecodebench": {
+            "tps_clean": 191.86042922946527
+          },
+          "mbpp": {
+            "tps_clean": 232.67387825631687
+          },
+          "mt-bench": {
+            "tps_clean": 180.24255043972175
+          }
+        }
+      }
+    }
+  },
+  "checks": {
+    "acceptance_match": false,
+    "mismatched_units": [
+      "bna/humaneval/Autoregressive",
+      "bna/humaneval/DFlash",
+      "bna/humaneval/DSpark",
+      "bna/mbpp/Autoregressive",
+      "bna/mbpp/DFlash",
+      "bna/mbpp/DSpark",
+      "bna/aime25/Autoregressive",
+      "bna/aime25/DFlash",
+      "bna/aime25/DSpark",
+      "bna/mt-bench/Autoregressive",
+      "bna/mt-bench/DFlash",
+      "bna/mt-bench/DSpark",
+      "bna/aime24/Autoregressive",
+      "bna/aime24/DFlash",
+      "bna/aime24/DSpark",
+      "bna/gsm8k/Autoregressive",
+      "bna/gsm8k/DFlash",
+      "bna/gsm8k/DSpark",
+      "bna/alpaca/Autoregressive",
+      "bna/alpaca/DFlash",
+      "bna/alpaca/DSpark",
+      "bna/livecodebench/Autoregressive",
+      "bna/livecodebench/DFlash",
+      "bna/livecodebench/DSpark",
+      "b128/mbpp/DDTree",
+      "b128/mbpp/SparklingTree",
+      "b128/aime25/DDTree",
+      "b128/aime25/SparklingTree",
+      "b128/mt-bench/DDTree",
+      "b128/mt-bench/SparklingTree",
+      "b128/aime24/DDTree",
+      "b128/aime24/SparklingTree",
+      "b128/gsm8k/DDTree",
+      "b128/gsm8k/SparklingTree",
+      "b128/alpaca/DDTree",
+      "b128/alpaca/SparklingTree",
+      "b128/livecodebench/DDTree",
+      "b128/livecodebench/SparklingTree",
+      "b256/mbpp/DDTree",
+      "b256/mbpp/SparklingTree",
+      "b256/aime25/DDTree",
+      "b256/aime25/SparklingTree",
+      "b256/mt-bench/DDTree",
+      "b256/mt-bench/SparklingTree",
+      "b256/aime24/DDTree",
+      "b256/aime24/SparklingTree",
+      "b256/gsm8k/DDTree",
+      "b256/gsm8k/SparklingTree",
+      "b256/livecodebench/DDTree",
+      "b256/livecodebench/SparklingTree",
+      "b64/mbpp/DDTree",
+      "b64/mbpp/SparklingTree",
+      "b64/aime25/DDTree",
+      "b64/aime25/SparklingTree",
+      "b64/mt-bench/DDTree",
+      "b64/mt-bench/SparklingTree",
+      "b64/aime24/DDTree",
+      "b64/aime24/SparklingTree",
+      "b64/gsm8k/DDTree",
+      "b64/gsm8k/SparklingTree",
+      "b64/alpaca/DDTree",
+      "b64/alpaca/SparklingTree",
+      "b64/livecodebench/DDTree",
+      "b64/livecodebench/SparklingTree"
+    ]
+  }
+}

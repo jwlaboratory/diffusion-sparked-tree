@@ -1,5 +1,14 @@
 # Experiment 4-faster / 2 — precomputed transition table (stacked on transfer-less)
 
+> **⚠️ PARTIALLY SUPERSEDED (2026-08-05, harness-6-union).** Finding #4's acceptance
+> leak was FIXED: the precompute builder now pools the deduped union (same set as
+> `fast`), and the re-run measured exact acceptance parity (8.004 @b64, 8.885 @b256,
+> C=512, both arms). The cost moved: union precompute builds an O(L·U²) table, so at
+> C=512 it is now *slower* than `fast` (96 vs 143 TPS @b256). The speed findings
+> below (per-depth table ≈ free) no longer describe the current builder. The live
+> question — fast vs union-precompute vs DDTree at C=128, old-BLOG scale, one GPU —
+> is what `modal_benchmark.py` now measures.
+
 Fold the precomputed `[L-1, C, C]` transition table **on top of** the 1-transfer-less
 builder, and measure what that one move adds. This is the "together" stack: the
 precompute arm keeps every transfer-less fix (GPU top-k, ship one small candidate

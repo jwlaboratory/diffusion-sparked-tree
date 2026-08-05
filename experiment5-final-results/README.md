@@ -1,11 +1,42 @@
 # Experiment 5 — Final Results
 
-Head-to-head on one machine, one job: **DFlash · DSpark · DDTree · SparklingTree (ours)**,
-reporting **mean acceptance** and **net wall-clock speedup**.
+Head-to-head on **one machine, one job** (deliberately unsharded — TPS ratios are
+only trustworthy within a single GPU; the sharded launcher was deleted after
+cross-shard TPS was measured to swing ~20% at identical work): **AR · DFlash ·
+DSpark · DDTree · SparklingTree (ours)**, reporting **mean acceptance** and **net
+wall-clock speedup vs AR**.
 
-SparklingTree = DSpark-b16 + its markov head + the best-first **precompute** tree
-builder (the exp4 winner). DDTree is the official reference (DFlash backbone,
-corrector-free). DFlash / DSpark are the base chain drafters.
+SparklingTree = DSpark-b16 + its markov head + the best-first **union** tree
+builder (post `harness-6-union` fix; per-depth-precompute results predating the
+fix are archived in `../_archive_old_results_pre_union/` and are NOT citable).
+DDTree is the official reference (DFlash backbone, corrector-free).
+
+## TODO before the citable run (details in run_final.py docstring)
+
+1. **Builder** — `best-first-fast` vs `best-first-precompute`: same tree post-fix,
+   different build cost. Decided by the one-GPU repro in
+   `../experiment4-faster/2-precompute/` (in flight).
+2. **Temperature** — temp 0 is standard; the branch-conditional edge is largest at
+   temp 1.0 (old BLOG: +8.9% acceptance, 6/6 datasets). If temp-0 aggregate does
+   not clear DDTree, lead with temp 1.0 and report temp 0 alongside. No dataset
+   cherry-picking.
+
+The paper's conclusion cites `results/summary.json` produced by this script only.
+
+## Benchmarking practices
+
+We follow **DDTree benchmarking practices** (the official repo, pinned at our
+embedded clone commit `f6d9bb8`):
+
+1. **C++ KV compaction ON** — upstream's default (`maybe_enable_cpp_compact(True)`,
+   enforced in `harness/runner/driver.py`). The old final benchmark disabled it
+   (`--disable-cpp-compact-cache`); that deviation distorted its wall-clock numbers
+   and is documented as an erratum in `old-experiments/`.
+2. **Sync-on timing always recorded** — the `instrumented` pass reproduces the
+   DDTree repo's methodology exactly (per-stage `torch.cuda.synchronize()` barriers,
+   upstream `dflash.py:157`), so those numbers are directly comparable to the
+   DDTree paper's. The `clean` pass (same run, barriers off) is reported alongside
+   as the unbiased headline TPS. Every citable run executes BOTH passes.
 
 ## How to run
 

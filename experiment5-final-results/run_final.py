@@ -1,13 +1,36 @@
-"""Experiment 5 — FINAL RESULTS.
+"""Experiment 5 — FINAL RESULTS (single GPU, publishable protocol).
 
-Head-to-head: DFlash vs DSpark vs DDTree vs SparklingTree (ours), one job, one
-machine, reporting mean acceptance and net wall-clock speedup. Set the tunables
-below (C / K / B come from the exp4 csweep winner) and run.
+Head-to-head: Autoregressive vs DFlash vs DSpark vs DDTree vs SparklingTree
+(ours). ONE job on ONE H100 — every method shares the same GPU and container, so
+TPS ratios are directly comparable (cross-shard/cross-run TPS varies ~20% with
+GPU conditions; the earlier sharded launcher was deleted for exactly that
+reason). Per-unit resume cache: a crash or timeout loses at most one
+(dataset, budget) unit; re-launching resumes.
 
+Reproduce:
     modal run run_final.py --smoke          # tiny end-to-end validation, minutes
     modal run --detach run_final.py --spawn # full run, detached (survives CLI)
+    modal volume get ddtree-results final/summary.json results/summary.json
+    python make_charts_final.py             # charts from results/summary.json
 
-Then:  python analyze_final.py results/summary.json
+── STATUS / WHAT REMAINS BEFORE THE FINAL RUN ────────────────────────────────
+The SparklingTree builder was fixed (harness-6-union: precompute now pools the
+same deduped-union candidate set as `fast`, recovering the ~2-6% acceptance the
+per-depth table leaked — see experiment4-faster/2-precompute). Two decisions are
+PENDING on the old-scale reproduction currently running in
+experiment4-faster/2-precompute (fast vs precompute vs DDTree, one GPU):
+
+  1. OUR_TREE_MODE: "best-first-fast" vs "best-first-precompute". Post-fix both
+     build the same tree; they differ only in build cost (fast ~ budget*U serial,
+     precompute ~ L*U^2 batched). Pick whichever the repro shows faster e2e.
+  2. TEMPERATURE: 0.0 is the standard reporting regime, but the branch-
+     conditional advantage is largest under sampling (old-experiments/BLOG.md:
+     +8.9% acceptance at temp 1.0, 6/6 datasets). If temp-0 aggregate does not
+     clear DDTree, report temp 1.0 as the headline WITH temp 0 alongside —
+     do not cherry-pick datasets.
+
+Numbers quoted in the paper's conclusion must come from results/summary.json of
+THIS script's run (single GPU), not from any sharded/archived summary.
 """
 
 import json
@@ -36,14 +59,17 @@ OUR_TREE_MODE = "best-first-precompute"   # csweep winner (now UNION-based, == f
 # NB: C also changes the method fingerprint -> fresh run tag, so the merge never unions
 # these units with the old per-depth (harness-5) cache.
 C             = 128        # per-depth shortlist feeding the union  (beam_candidates)
-K             = 256        # max fanout per node (max_fanout); clamped to budget internally
+K             = 64         # max fanout per node (max_fanout). Lever test (2-precompute,
+                           # harness-8-packed): capping at 64 costs ZERO measured acceptance
+                           # (8.57 == 8.57 @b256) and cuts the [L,U,k] transfer 4x at b256
+                           # -> b256 went from ST's worst cell to +9.8% vs DDTree.
 # Tree node budgets, per method. DDTree at {64,256}; SparklingTree at its best
 # budget (leave as a list; narrow to the csweep winner when known). Both tree
 # methods actually run at the UNION of these (BUDGETS) -- so if SparklingTree's
 # budget falls outside {64,256}, DDTree will also run there (harmless extra data;
 # the headline just reads DDTree@{64,256} and SparklingTree@its budget).
-DDTREE_BUDGETS    = [64, 256]
-SPARKLING_BUDGETS = [128]        # csweep winner; SparklingTree headline reads @128
+DDTREE_BUDGETS    = [64, 128, 256]
+SPARKLING_BUDGETS = [64, 128, 256]
 BUDGETS           = sorted(set(DDTREE_BUDGETS) | set(SPARKLING_BUDGETS))  # = [64, 128, 256]
 
 # --- which methods to include in the comparison ------------------------------
@@ -66,14 +92,15 @@ SPEEDUP_BASELINE = "Autoregressive"
 
 # --- evaluation : full DDTree-paper protocol (arXiv 2604.12989, Table 2) ------
 #     10 benchmarks, full test sets, 2048 new tokens.
+# 6 datasets x 12 samples x 512 tokens, ONE GPU. SEED=1 -> a FRESH random sample
+# draw (driver shuffles with the seed before selecting; seed 0 was every prior run).
 DATASETS = [
-    ["math500", 128], ["gsm8k", 128], ["aime24", 30], ["aime25", 30],
-    ["humaneval", 164], ["mbpp", 128], ["livecodebench", 128], ["swe-bench", 128],
-    ["mt-bench", 80], ["alpaca", 128],
+    ["humaneval", 12], ["mbpp", 12], ["gsm8k", 12],
+    ["math500", 12], ["mt-bench", 12], ["alpaca", 12],
 ]
-MAX_NEW_TOKENS = 2048
+MAX_NEW_TOKENS = 512
 TEMPERATURE    = 0.0
-SEED           = 0
+SEED           = 1
 WARMUP_TOKENS  = 256
 
 # --- models (usually leave as-is) --------------------------------------------
@@ -147,8 +174,11 @@ def build_run_config() -> dict:
         "methods": methods,
         "tasks": DATASETS,
         "tree_budgets": BUDGETS,
-        "passes": ["clean"],   # drop instrumented (~2x). Not fingerprinted -> reuses
-                                # cached units. Loses only the per-phase breakdown.
+        # Instrumented ONLY — following DDTree benchmarking practices: sync-on
+        # timing (per-stage cuda_time barriers, upstream dflash.py:157) and C++ KV
+        # compaction ON (upstream default; driver.py enforces it). One set of
+        # numbers, measured exactly as the DDTree repo measures theirs.
+        "passes": ["instrumented"],
         "temperature": TEMPERATURE,
         "max_new_tokens": MAX_NEW_TOKENS,
         "seed": SEED,
@@ -202,7 +232,9 @@ def run_experiment(cfg: dict) -> dict:
     sys.path.insert(0, "/root/harness/runner")
     import driver
     summary = driver.run(cfg, on_checkpoint=results_vol.commit)
-    out = Path("/results/final/summary.json")
+    # Name the summary by temperature so parallel temp-0 / temp-1 jobs never
+    # clobber each other (each runs self-contained on its own GPU).
+    out = Path(f"/results/final/summary_t{cfg['temperature']}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2))
     results_vol.commit()
@@ -248,8 +280,10 @@ def _accept(summary: dict, bkey: str, name: str) -> float:
 
 
 @app.local_entrypoint()
-def main(smoke: bool = False, spawn: bool = False):
+def main(smoke: bool = False, spawn: bool = False, temperature: float = -1.0):
     cfg = build_run_config()
+    if temperature >= 0.0:      # CLI override; -1 keeps the TEMPERATURE tunable
+        cfg["temperature"] = temperature
     if smoke:
         cfg["tasks"] = [["gsm8k", 1]]
         cfg["max_new_tokens"] = 64

@@ -1,6 +1,15 @@
 # Optimal SparklingTree config — DSpark-b16 / Qwen3-4B / H100, batch-1, temp-0
 
-**Bottom line:**
+> **⚠️ SUPERSEDED (2026-08-05, harness-6-union).** Everything below was measured on
+> the per-depth-top-C precompute builder, which leaked ~2-6% acceptance (RESULTS.md
+> finding #4 in 2-precompute/). The builder now pools the deduped union: acceptance
+> equals `fast` at any C (the "acceptance climbs with C" premise is gone), and
+> precompute's build is O(L·U²) — *more* expensive than `fast` at large C. The
+> builder/C/budget recommendation below is therefore VOID. The replacement
+> measurement (fast vs precompute vs DDTree, one GPU, old-BLOG scale) runs in
+> `2-precompute/`; its result picks the final builder + C for experiment 5.
+
+**Bottom line (STALE — see banner):**
 
 > **builder = `best-first-precompute`, C (`beam_candidates`) = 256, tree_budget = 128**
 

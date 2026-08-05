@@ -4,6 +4,21 @@ This is the exp3 timing driver, built as the merge the two per-experiment driver
 were converging on: exp1's dflash support and timing capture, exp2's RoPE/block
 guards, budget sweep, and per-unit resume cache.
 
+BENCHMARKING PRACTICES — following DDTree benchmarking practices (the official
+repo, our old-experiments/ddtree clone at commit f6d9bb8):
+  * C++ KV compaction is ALWAYS ON (maybe_enable_cpp_compact(True) below), the
+    upstream default. Never pass/port --disable-cpp-compact-cache into new runs:
+    the old final_benchmark did, and the Python fallback (72 gather/copies per
+    round) distorted every wall-clock number it produced.
+  * The instrumented pass reproduces upstream's timing exactly: cuda_time() =
+    torch.cuda.synchronize() + perf_counter at every stage boundary (their
+    dflash.py:157). Numbers from this pass are directly comparable to the
+    DDTree paper's.
+  * The clean pass is the same run with barriers off — the unbiased headline
+    TPS (per-stage barriers tax every round and relatively flatter
+    high-acceptance methods; see the +17.8% postmortem, 2026-08-05).
+Run BOTH passes in anything meant to be cited.
+
 Two passes per unit (see experiment3-timings/reproduce.md):
   clean        -- timing.set_timing(False): no per-stage barriers, full CPU/GPU
                   overlap. Yields the headline tps_decode.
@@ -56,7 +71,12 @@ from metrics import PHASE_ORDER, sample_record, build_entry, build_timing_rollup
 # v5-csweep: candidate-size (C) sweep over the fast + precompute builders (exp4/2-precompute/csweep).
 # v6-union: precompute builder now pools the deduped UNION candidate set (== fast), not per-depth
 #   top-C -- recovers the ~2-6% acceptance it was leaking. Old cache units are stale; miss them.
-CODE_VERSION = "harness-6-union"
+# v7-batched: _union_transition_topk batches depths adaptively (one [n,U,U] launch set instead of
+#   L per-depth loops) -- same tree bit-for-bit (equivalence suite 100%), but .prep wall-clock
+#   changes, so TPS units must recompute.
+# v8-packed: precompute's one transfer packed as bytes (fp32 vals / int16 slots / int32 cand;
+#   25% smaller, scales with topk=budget). Same tree bit-for-bit (suite 100%); timing changes.
+CODE_VERSION = "harness-8-packed"
 
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},

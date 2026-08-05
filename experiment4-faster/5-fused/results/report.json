@@ -1,0 +1,679 @@
+{
+  "build": {
+    "ok": true
+  },
+  "parity_op": [
+    {
+      "seed": 0,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.171875e-05,
+      "slots_n_diff": 18,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.5390625e-05,
+      "slots_n_diff": 78,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.2643229166666666e-05,
+      "slots_n_diff": 262,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.049041748046875e-05,
+      "slots_n_diff": 22,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.8848648071289062e-05,
+      "slots_n_diff": 121,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.410743713378906e-05,
+      "slots_n_diff": 370,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.2874603271484375e-05,
+      "slots_n_diff": 54,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.849102020263672e-05,
+      "slots_n_diff": 239,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 0,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.1856040954589844e-05,
+      "slots_n_diff": 870,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.171875e-05,
+      "slots_n_diff": 18,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.34375e-05,
+      "slots_n_diff": 72,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 3.80859375e-05,
+      "slots_n_diff": 234,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.430511474609375e-05,
+      "slots_n_diff": 30,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.765655517578125e-05,
+      "slots_n_diff": 116,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.303455352783203e-05,
+      "slots_n_diff": 361,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.4781951904296875e-05,
+      "slots_n_diff": 62,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 3.123283386230469e-05,
+      "slots_n_diff": 262,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 1,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.6803226470947266e-05,
+      "slots_n_diff": 953,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 9.765625e-06,
+      "slots_n_diff": 15,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.34375e-05,
+      "slots_n_diff": 72,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.3131510416666667e-05,
+      "slots_n_diff": 265,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.430511474609375e-05,
+      "slots_n_diff": 30,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.574920654296875e-05,
+      "slots_n_diff": 108,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.4226646423339844e-05,
+      "slots_n_diff": 371,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.7404556274414062e-05,
+      "slots_n_diff": 73,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.86102294921875e-05,
+      "slots_n_diff": 240,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 2,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.6684017181396484e-05,
+      "slots_n_diff": 951,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 9.114583333333334e-06,
+      "slots_n_diff": 14,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.1484375e-05,
+      "slots_n_diff": 66,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 3.759765625e-05,
+      "slots_n_diff": 231,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.3828277587890625e-05,
+      "slots_n_diff": 29,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 3.0994415283203125e-05,
+      "slots_n_diff": 130,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.8279762268066406e-05,
+      "slots_n_diff": 405,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.4543533325195312e-05,
+      "slots_n_diff": 61,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 3.075599670410156e-05,
+      "slots_n_diff": 258,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 3,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.257129669189453e-05,
+      "slots_n_diff": 882,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.4322916666666666e-05,
+      "slots_n_diff": 22,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.4739583333333333e-05,
+      "slots_n_diff": 76,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.606119791666667e-05,
+      "slots_n_diff": 283,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.1920928955078125e-05,
+      "slots_n_diff": 25,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.384185791015625e-05,
+      "slots_n_diff": 100,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 4.172325134277344e-05,
+      "slots_n_diff": 350,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.8358230590820312e-05,
+      "slots_n_diff": 77,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 3.0040740966796875e-05,
+      "slots_n_diff": 252,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 4,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.21540641784668e-05,
+      "slots_n_diff": 875,
+      "vals_max_abs_diff": 1.9073486328125e-06,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 1500,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.5625e-05,
+      "slots_n_diff": 24,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 1500,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.34375e-05,
+      "slots_n_diff": 72,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 1500,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 3.6458333333333336e-05,
+      "slots_n_diff": 224,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 2048,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.049041748046875e-05,
+      "slots_n_diff": 22,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 2048,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 2.3126602172851562e-05,
+      "slots_n_diff": 97,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 2048,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 3.9458274841308594e-05,
+      "slots_n_diff": 331,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 4096,
+      "k": 64,
+      "slots_exact": false,
+      "slots_frac_diff": 1.71661376953125e-05,
+      "slots_n_diff": 72,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 4096,
+      "k": 128,
+      "slots_exact": false,
+      "slots_frac_diff": 3.2067298889160156e-05,
+      "slots_n_diff": 269,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    },
+    {
+      "seed": 5,
+      "U": 4096,
+      "k": 256,
+      "slots_exact": false,
+      "slots_frac_diff": 5.644559860229492e-05,
+      "slots_n_diff": 947,
+      "vals_max_abs_diff": 9.5367431640625e-07,
+      "vals_allclose_1e-5": true
+    }
+  ],
+  "parity_tree": [
+    {
+      "seed": 0,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 0,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    },
+    {
+      "seed": 1,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 1,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    },
+    {
+      "seed": 2,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 2,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    },
+    {
+      "seed": 3,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 3,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    },
+    {
+      "seed": 4,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 4,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    },
+    {
+      "seed": 5,
+      "budget": 64,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 64,
+      "nodes_fused": 64
+    },
+    {
+      "seed": 5,
+      "budget": 256,
+      "C": 128,
+      "agree_pct": 100.0,
+      "nodes_torch": 256,
+      "nodes_fused": 256
+    }
+  ],
+  "microbench": [
+    {
+      "L": 16,
+      "U": 2048,
+      "k": 64,
+      "torch_us_per_call": 2414.898681640625,
+      "fused_us_per_call": 2549.203369140625,
+      "speedup": 0.947315036090951
+    },
+    {
+      "L": 16,
+      "U": 2048,
+      "k": 128,
+      "torch_us_per_call": 2421.476318359375,
+      "fused_us_per_call": 2553.99072265625,
+      "speedup": 0.9481147667760301
+    },
+    {
+      "L": 16,
+      "U": 2048,
+      "k": 256,
+      "torch_us_per_call": 2942.3564453125,
+      "fused_us_per_call": 2544.9189453125,
+      "speedup": 1.1561690209159872
+    }
+  ],
+  "parity_op_summary": {
+    "all_slots_exact": false,
+    "max_slots_frac_diff": 5.6803226470947266e-05,
+    "max_vals_abs_diff": 1.9073486328125e-06
+  },
+  "parity_tree_summary": {
+    "overall_agree_pct": 100.0
+  }
+}

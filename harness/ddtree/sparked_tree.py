@@ -412,7 +412,8 @@ def build_sparked_tree_fast(
     return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
 
 
-def _union_transition_topk(base_active, w1_u, w2_u, topk):
+def _union_transition_topk(base_active, w1_u, w2_u, topk, batch_depths: bool = True,
+                           use_fused: bool = False, compute_bf16: bool = False):
     """Top-k of every branch-conditional transition the walk could ask for, over a
     single DEDUPED-UNION candidate set (the same set build_sparked_tree_fast uses).
 
@@ -432,22 +433,62 @@ def _union_transition_topk(base_active, w1_u, w2_u, topk):
     two builders now agree at the SAME candidate set (up to matmul reduction epsilon),
     which is what makes precompute inherit fast's acceptance.
 
-    We materialise ONE depth's [U, U] slab at a time and top-k it, rather than the
-    whole [L, U, U] stack: with high-entropy logits U approaches L*C (little overlap),
-    so [L, U, U] can reach multiple GB, while a single slab stays ~U^2. Returns
+    Depths are processed in ADAPTIVE CHUNKS: as many [U, U] slabs as fit under
+    ~512 MB are batched into one [n, U, U] add+logsumexp+topk (at C=128, U~2k,
+    all 16 depths go in ONE batch -- ~5 kernel launches per round instead of ~80,
+    which is most of the old .prep cost under sync-on timing). With high-entropy
+    logits U approaches L*C, so at C=512 (U~8k) the chunk degrades gracefully to
+    one depth at a time -- never worse than the old per-depth loop. Returns
     (vals [L, U, topk], slots [L, U, topk]); slots index into the union.
     """
     depth_limit, union_size = base_active.shape
     bias = (w1_u @ w2_u.T) if w1_u is not None else None     # [U, U] or None (no corrector)
+    # Opt-in fused CUDA path: one kernel replaces the add+logsumexp+topk slab passes,
+    # no [n, U, U] materialisation. Only when a corrector bias exists (the kernel adds
+    # base+bias) and the shapes fit; otherwise fall through to the torch path. The op
+    # selects the SAME columns as the torch path (bit-identical add + matching tie
+    # rule), so the tree is unchanged; only `vals` differs by lse-reduction epsilon.
+    if use_fused and bias is not None and base_active.is_cuda:
+        from fused_table import load_fused_module, fused_supported
+        if fused_supported(union_size, topk):
+            module = load_fused_module()
+            if module is not None:
+                vals_f, slots_f = module.fused_bias_lse_topk(
+                    base_active.contiguous(), bias.contiguous(), int(topk))
+                return vals_f, slots_f.to(torch.long)
+    # ~512 MB fp32 slab budget -> depths per batch (>=1). batch_depths=False forces
+    # the pre-4-launch per-depth loop (kept ONLY for the exp4 ablation ladder).
+    # compute_bf16 (table_quant="bf16c") runs the slab add+lse+topk in bfloat16 --
+    # HALF the slab traffic, at the cost of tree flips on near-ties (quant ladder).
+    if compute_bf16:
+        base_active = base_active.bfloat16()
+        bias = bias.bfloat16() if bias is not None else None
+    elem = 2 if compute_bf16 else 4
+    chunk = max(1, (1 << 29) // max(1, union_size * union_size * elem)) if batch_depths else 1
     vals = base_active.new_empty((depth_limit, union_size, topk))
     slots = base_active.new_empty((depth_limit, union_size, topk), dtype=torch.long)
-    for d in range(depth_limit):
-        row = base_active[d].unsqueeze(0)                     # [1, U]
-        slab = row + bias if bias is not None else row.expand(union_size, -1)
+    for d0 in range(0, depth_limit, chunk):
+        rows = base_active[d0:d0 + chunk].unsqueeze(1)        # [n, 1, U]
+        if bias is not None:
+            slab = rows + bias.unsqueeze(0)                   # [n, U, U]
+        else:
+            slab = rows.expand(-1, union_size, -1)
         slab = slab - torch.logsumexp(slab, dim=-1, keepdim=True)
-        v, s = torch.topk(slab, k=topk, dim=-1)              # [U, topk]
-        vals[d], slots[d] = v, s
-    return vals, slots
+        v, s = torch.topk(slab, k=topk, dim=-1)               # [n, U, topk]
+        vals[d0:d0 + chunk], slots[d0:d0 + chunk] = v, s
+    return (vals.float() if compute_bf16 else vals), slots
+
+
+_FP8_LUT_CACHE = None
+
+
+def _fp8_lut():
+    """256-entry float8_e4m3fn byte -> float32 decode table (walk-side reads)."""
+    global _FP8_LUT_CACHE
+    if _FP8_LUT_CACHE is None:
+        _FP8_LUT_CACHE = (torch.arange(256, dtype=torch.uint8)
+                          .view(torch.float8_e4m3fn).float().numpy())
+    return _FP8_LUT_CACHE
 
 
 def build_sparked_tree_precompute(
@@ -457,6 +498,9 @@ def build_sparked_tree_precompute(
     budget: int,
     candidates: int = 512,
     max_fanout: int = 0,
+    batch_depths: bool = True,
+    use_fused: bool = False,
+    table_quant: str = "exact",
 ) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor, dict[str, float]]:
     """Best-first markov tree at ONE sync per round -- batched *before* the walk.
 
@@ -536,21 +580,49 @@ def build_sparked_tree_precompute(
         w1_u = w2_u = None                                                     # no corrector
 
     # Per (depth, parent-slot) top-k over the union; slots index into cand_ids.
-    table_vals, table_slots = _union_transition_topk(base_active, w1_u, w2_u, topk)   # [L, U, k]
+    table_vals, table_slots = _union_transition_topk(
+        base_active, w1_u, w2_u, topk, batch_depths, use_fused,
+        compute_bf16=(table_quant == "bf16c"))                                 # [L, U, k]
 
-    # ONE transfer for every table the walk can reach. Slots / token ids ride
-    # through float32 exactly (vocab << 2^24), the same pack trick as elsewhere.
+    # ONE transfer for every table the walk can reach, PACKED as bytes. Score
+    # encoding is the QUANT LADDER (tree_kwargs table_quant):
+    #   "exact" (default) fp32 -- bit-identical trees (the equivalence-gated path)
+    #   "fp16"            fp16 scores -- flips ~1% of near-tie pops (measured)
+    #   "bf16c"           slab computed in bf16 (half the GPU traffic), shipped fp16
+    #   "fp8"             float8_e4m3fn scores, decoded via a 256-entry LUT
+    # Slots are int16 when U < 2^15 (int32 in full-vocab mode), token ids int32.
+    # The transfer scales with topk(=budget); max_fanout is the big lever at large
+    # budgets, this pack + quant are the per-byte ones.
+    slot_dtype, slot_np, slot_bytes = (
+        (torch.int16, np.int16, 2) if union_size < (1 << 15) else (torch.int32, np.int32, 4))
+    if table_quant in ("fp16", "bf16c"):
+        packed_vals = table_vals.reshape(-1).to(torch.float16).view(torch.uint8)
+        val_np, val_bytes = np.float16, 2
+    elif table_quant == "fp8":
+        packed_vals = table_vals.reshape(-1).to(torch.float8_e4m3fn).view(torch.uint8)
+        val_np, val_bytes = np.uint8, 1
+    else:  # "exact"
+        packed_vals = table_vals.reshape(-1).view(torch.uint8)
+        val_np, val_bytes = np.float32, 4
     flat = torch.cat([
-        table_vals.reshape(-1),
-        table_slots.reshape(-1).float(),
-        cand_ids.float(),
+        packed_vals,
+        table_slots.reshape(-1).to(slot_dtype).view(torch.uint8),
+        cand_ids.to(torch.int32).view(torch.uint8),
     ]).cpu().numpy()
     build_subtimes["tree_build_copy"] = cuda_time() - copy_start
 
     span = depth_limit * union_size * topk
-    vals = flat[:span].reshape(depth_limit, union_size, topk)
-    slots = flat[span:2 * span].reshape(depth_limit, union_size, topk).astype(np.int64)
-    cand = flat[2 * span:].astype(np.int64)                                    # [U] global token ids
+    vals = flat[:val_bytes * span].view(val_np).reshape(depth_limit, union_size, topk)
+    slots = flat[val_bytes * span:val_bytes * span + slot_bytes * span].view(slot_np).reshape(
+        depth_limit, union_size, topk)
+    cand = flat[val_bytes * span + slot_bytes * span:].view(np.int32)          # [U] global token ids
+    if table_quant == "fp8":
+        lut = _fp8_lut()
+        def _v(d, p, r):  # fp8 byte -> float via LUT (only ~2*budget reads/round)
+            return float(lut[vals[d, p, r]])
+    else:
+        def _v(d, p, r):
+            return float(vals[d, p, r])
 
     root_slot = int(np.searchsorted(cand, int(root_token_id)))                 # cand is sorted
 
@@ -569,7 +641,7 @@ def build_sparked_tree_precompute(
     node_count = 0
     tiebreak = 0
 
-    first_logw = float(vals[0, root_slot, 0])
+    first_logw = _v(0, root_slot, 0)
     heap: list[tuple[float, int, int, int, int, float]] = [(-first_logw, tiebreak, 0, 1, 0, first_logw)]
 
     while heap and node_count < budget:
@@ -591,13 +663,13 @@ def build_sparked_tree_precompute(
 
         # Sibling: next-best child of the SAME parent (same table row).
         if rank + 1 < topk:
-            sibling_logw = logw - float(vals[p_depth, p_slot, rank]) + float(vals[p_depth, p_slot, rank + 1])
+            sibling_logw = logw - _v(p_depth, p_slot, rank) + _v(p_depth, p_slot, rank + 1)
             tiebreak += 1
             heapq.heappush(heap, (-sibling_logw, tiebreak, parent_index, depth, rank + 1, sibling_logw))
 
         # Child: this node's own best child, via its precomputed table row (depth, slot).
         if depth < depth_limit:
-            child_logw = logw + float(vals[depth, slot, 0])
+            child_logw = logw + _v(depth, slot, 0)
             tiebreak += 1
             heapq.heappush(heap, (-child_logw, tiebreak, current_index, depth + 1, 0, child_logw))
     build_subtimes["tree_build_heap"] = time.perf_counter() - heap_start
@@ -781,6 +853,9 @@ def sparked_tree_generate(
     beam_schedule: dict | None = None,
     beam_candidates: int = 2048,
     max_fanout: int = 0,
+    batch_depths: bool = True,
+    fused_table: bool = False,
+    table_quant: str = "exact",
     probe_markov_head=None,
     save_tree_traces: bool = False,
 ) -> SimpleNamespace:
@@ -802,9 +877,11 @@ def sparked_tree_generate(
                      one active-slice CPU transfer, per-pop compute on ~C columns.
                      beam_candidates=0 makes it identical to "best-first".
       "best-first-precompute" - same strict best-first pop order (build_sparked_tree_
-                     precompute), but the whole [L-1, C, C] transition stack is one
-                     batched GPU matmul BEFORE the walk, so the heap walk is pure CPU.
-                     Isolates the per-pop `.expand` cost the fast builder still pays.
+                     precompute), but the whole [L, U, U] transition stack over the
+                     deduped UNION candidate set (same set as "best-first-fast") is
+                     batched on GPU BEFORE the walk -- depth-chunked under a memory
+                     cap (batch_depths) -- so the heap walk is pure CPU lookup.
+                     Same tree as "best-first-fast" bit-for-bit.
       "beam"       - level-synchronous builder (build_beam_tree): tree shape fixed
                      up front by `beam_schedule`, one batched expansion per depth.
     beam_schedule: width-schedule spec for tree_mode="beam"; see
@@ -967,6 +1044,9 @@ def sparked_tree_generate(
                 tree_budget,
                 beam_candidates,
                 max_fanout,
+                batch_depths,
+                fused_table,
+                table_quant,
             )
         else:
             node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree(

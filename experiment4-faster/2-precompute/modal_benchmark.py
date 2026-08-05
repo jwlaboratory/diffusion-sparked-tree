@@ -48,29 +48,45 @@ TARGET = "Qwen/Qwen3-4B"
 
 BACKBONES = [
     {"name": "dspark_b16", "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16", "kind": "dspark"},
+    {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
 ]
 
 CORRECTOR = "dspark_b16_markov"
-BEAM_CANDIDATES = 512  # SAME on both arms -- isolates the mechanism, controls acceptance
+BEAM_CANDIDATES = 128  # union builder's per-depth shortlist (post harness-6-union fix)
 
 
+# Lever test at large budget: can we rescue the b256 column? ONE GPU, DDTree
+# benchmarking practices (sync ON instrumented-only, compaction ON).
+#   ST.pack      - v8 packed transfer, fanout = budget (the current default)
+#   ST.fanout64  - + max_fanout=64: transferred slice /4 at b256; old data says
+#                  a fanout cap this size costs ~0.4% acceptance
+#   ST.beam      - level-synchronous beam builder (all-GPU, near-free build) --
+#                  trades adaptive allocation (acceptance) for build cost
+# Quant ladder: price the accuracy-vs-speed trade of quantizing the transition
+# table (production config: union C=128, max_fanout=64). Local tree agreement vs
+# exact: fp16 99.2%, bf16c 29.4%(!), fp8 66.3% -- this run prices the other side
+# (real acceptance + TPS).
+_ST_BASE = {"tree_mode": "best-first-precompute", "beam_candidates": BEAM_CANDIDATES,
+            "max_fanout": 64}
 METHODS = [
-    # Baseline: the 1-transfer-less winner, held at C=512 so the candidate set matches
-    # the precompute arm. Its cost still includes the serial per-pop .expand loop.
-    {"name": "bestfirst.fast", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
-     "tree_kwargs": {"tree_mode": "best-first-fast", "beam_candidates": BEAM_CANDIDATES}},
-    # Precompute: same best-first tree, transitions hoisted into one batched matmul.
-    {"name": "bestfirst.precompute", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
-     "tree_kwargs": {"tree_mode": "best-first-precompute", "beam_candidates": BEAM_CANDIDATES}},
+    {"name": "DDTree", "backbone": "dflash_b16", "corrector": None, "verify": "ddtree"},
+    {"name": "ST.exact", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
+     "tree_kwargs": {**_ST_BASE}},
+    {"name": "ST.fp16", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
+     "tree_kwargs": {**_ST_BASE, "table_quant": "fp16"}},
+    {"name": "ST.bf16c", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
+     "tree_kwargs": {**_ST_BASE, "table_quant": "bf16c"}},
+    {"name": "ST.fp8", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
+     "tree_kwargs": {**_ST_BASE, "table_quant": "fp8"}},
 ]
 
+# 6 datasets x 3 samples (first discarded -> 2 measured) x 512 tokens.
 TASKS = [
-    ["gsm8k", 4],
-    ["humaneval", 4],
-    ["mt-bench", 4],
+    ["humaneval", 3], ["mbpp", 3], ["gsm8k", 3],
+    ["math500", 3], ["mt-bench", 3], ["alpaca", 3],
 ]
 
-TREE_BUDGETS = [64, 256]
+TREE_BUDGETS = [64]
 TEMPERATURE = 0.0
 MAX_NEW_TOKENS = 512
 SEED = 0
@@ -104,7 +120,10 @@ def build_run_config() -> dict:
         "methods": list(METHODS),
         "tasks": TASKS,
         "tree_budgets": TREE_BUDGETS,
-        "passes": ["clean", "instrumented"],
+        # Instrumented ONLY — sync-on timing, the DDTree repo's own methodology.
+        # (No clean pass: per user decision we report one set of numbers, measured
+        # exactly as DDTree measures theirs.)
+        "passes": ["instrumented"],
         "temperature": TEMPERATURE,
         "max_new_tokens": MAX_NEW_TOKENS,
         "seed": SEED,
