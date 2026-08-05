@@ -24,7 +24,7 @@ ORDER = sorted(LABEL, key=lambda k: -DATA[k]["seconds"])
 
 W, H = 1280, 760
 PAD = 12
-HEADER_H = 86
+HEADER_H = 48
 GRID_TOP = HEADER_H + 4
 PANE_W = (W - 5 * PAD) // 4
 PANE_H = H - GRID_TOP - PAD
@@ -106,15 +106,10 @@ def draw_pane(d, x, key, t):
 
 
 def header(d):
-    d.text((PAD, 12), "One prompt, four speculators — slowest → fastest",
-           font=F_TITLE, fill=TEXT)
     cfg = DATA["config"]
-    d.text((PAD, 42), f"chat · {cfg['target']} · one H100 · tree budget {cfg['budget']} "
-                      f"· greedy decoding · 450 tokens each", font=F_SUB, fill=DIM)
-    d.text((PAD, 62), "> " + DATA["prompt"][:150], font=F_SUB, fill=DIM)
-    speed = DATA["st"]["tps"] / DATA["ar"]["tps"]
-    tag = f"{speed:.1f}× vs AR"
-    d.text((W - PAD - F_TITLE.getlength(tag), 12), tag, font=F_TITLE, fill="#e34948")
+    d.text((PAD, 8), f"chat · {cfg['target']} · one H100 · tree budget {cfg['budget']} "
+                     f"· greedy decoding · 450 tokens each", font=F_SUB, fill=DIM)
+    d.text((PAD, 26), "> " + DATA["prompt"][:150], font=F_SUB, fill=DIM)
 
 
 def race_frame(t: float) -> Image.Image:
