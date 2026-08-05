@@ -509,9 +509,9 @@ PIE_OTHER_LABEL = "everything else"
 PIE_OTHER_COLOR = "#b5b4b0"
 # Short presentation names, pie chart only; every other chart keeps the arm ids.
 PIE_ARM_NAME = {
-    "dflash.chain": "dflash",
-    "dspark_b7.chain": "dspark",
-    "ddtree": "ddtree",
+    "dflash.chain": "DFlash",
+    "dspark_b7.chain": "DSpark",
+    "ddtree": "DDTree",
     "dspark_b16.markov.tree": "SparklingTree_b16",
 }
 

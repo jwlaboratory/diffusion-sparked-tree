@@ -176,7 +176,7 @@ def chart_markov_delta(summary, out):
     with its % change vs that backbone's no-markov chain baseline. Bars whose
     method has not been run yet are skipped."""
     groups = [  # (group label, [(sub-label, method)], shades light->dark)
-        ("DFlash  (block size 15)",
+        ("DFlash  (block size 16)",
          [("normal", "dflash.chain"), ("normal + markov", "dflash.markov.chain")],
          ["#aac9ec", "#2a78d6"]),
         ("DSpark  (block size 7)",
@@ -241,9 +241,9 @@ def chart_acceptance_simple(summary, out):
     """4-bar version of the aggregated chart with clean display names only."""
     series = [
         ("dspark.markov.tree", "SparklingTree-blocksize7"),
-        ("dflash.chain",       "Dflash-b16"),
+        ("dflash.chain",       "DFlash-b16"),
         ("dspark.chain",       "DSpark-b7"),
-        ("dflash.tree",        "DDtree-b16"),
+        ("dflash.tree",        "DDTree-b16"),
     ]
     results = summary["results"]
     datasets = list(results)

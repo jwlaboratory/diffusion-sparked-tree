@@ -1,17 +1,23 @@
-"""Per-domain acceptance: three methods as lines across datasets, faceted by tree budget.
+"""Per-domain acceptance: the four canonical arms as lines across datasets, tree budget 64.
 
-Three arms tell the progression story on each domain (dataset):
-  DSpark             = dspark_b7.tree          (base drafter + tree, markov OFF)
-  DDTree             = dspark_b7.markov.tree   (add the markov corrector, block 7)
-  SparkingTree_b16   = dspark_b16.markov.tree  (extend the draft horizon to block 16)
+Sourced from experiment 3's summary (the only run carrying all four canonical arms
+together), so names, colors, and numbers match the other figures. Canonical arm ids,
+display names, and the arm config that defines each (exp3 config.methods):
 
-x-axis = domain (gsm8k / humaneval / mt-bench), y = mean acceptance length
-(tokens accepted per verifier call). One panel per tree budget so the same
-domain can be compared across budgets. Colors reuse the repo's validated
-categorical palette.
+  DFlash             = dflash.chain            (dflash_b16, corrector None, verify chain)
+  DSpark             = dspark_b7.chain         (dspark_b7,  corrector None, verify chain)
+                        -- chain applies the DSpark markov head intrinsically => markov ON
+  DDTree             = ddtree                  (dflash_b16, corrector None, verify "ddtree")
+  SparklingTree_b16  = dspark_b16.markov.tree  (dspark_b16 + its markov head + tree)
+
+Colors follow exp3's ARM_COLOR: DFlash family = blues (chain light, tree saturated),
+DSpark family = warm (chain light orange, tree red). x-axis = domain, y = mean
+acceptance length (tokens/round). Vertical gap labels give the % lift from each line
+to the next one above it, per domain (line order can cross between domains).
 
 Usage:
-    python per_domain_acceptance.py [path/to/summary.json]   # default ./summary.json
+    python per_domain_acceptance.py [path/to/exp3_summary.json]
+    # default source: ../../experiment3-timings/results/summary.json
 """
 
 import json
@@ -22,11 +28,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# Display name -> method key in summary.json, in the intended draw/legend order.
+# Display name -> arm id -> color, in canonical ARM_ORDER (exp3 make_charts.py).
 LINES = [
-    ("DSpark", "dspark_b7.tree", "#4a3aa7"),            # violet  -- base drafter
-    ("DDTree", "dspark_b7.markov.tree", "#2a78d6"),     # blue    -- + markov corrector
-    ("SparkingTree_b16", "dspark_b16.markov.tree", "#e34948"),  # red -- + block-16 horizon
+    ("DFlash", "dflash.chain", "#6aa9e9"),                     # light blue (DFlash chain)
+    ("DSpark", "dspark_b7.chain", "#f0a15a"),                  # light orange (DSpark chain, markov ON)
+    ("DDTree", "ddtree", "#2a78d6"),                           # blue (DFlash-family tree)
+    ("SparklingTree_b16", "dspark_b16.markov.tree", "#e34948"),  # red (DSpark tree, block 16)
 ]
 
 SURFACE = "#fcfcfb"
@@ -41,91 +48,100 @@ plt.rcParams.update({
     "axes.spines.top": False, "axes.spines.right": False,
 })
 
+DEFAULT_SRC = Path(__file__).parents[2] / "experiment3-timings" / "results" / "summary.json"
+BUDGET = "64"
 
-def _budgets(results):
-    return sorted(results, key=lambda b: int(b))
 
+def chart(res, out):
+    """res: {dataset: {arm: {mean_accept, ...}}} for one budget."""
+    datasets = list(res)
 
-def chart(summary, out):
-    results = summary["results"]
-    budgets = _budgets(results)
-    # Datasets: union across budgets, first-seen order.
-    datasets = []
-    for bk in budgets:
-        for d in results[bk]:
-            if d not in datasets:
-                datasets.append(d)
-
-    # Shared y so the panels are comparable across budgets.
     ymax = 0.0
-    for bk in budgets:
-        for d in datasets:
-            for _, m, _c in LINES:
-                e = results[bk].get(d, {}).get(m)
-                if e:
-                    ymax = max(ymax, e["mean_accept"])
+    for d in datasets:
+        for _, m, _c in LINES:
+            e = res.get(d, {}).get(m)
+            if e:
+                ymax = max(ymax, e["mean_accept"])
     ymax = ymax or 1.0
 
-    ncols = len(budgets)
-    fig, axes = plt.subplots(1, ncols, figsize=(5.6 * ncols, 5.2),
-                             sharey=True, squeeze=False)
-    axes = axes[0]
+    fig, ax = plt.subplots(figsize=(7.2, 5.8))
     xs = list(range(len(datasets)))
 
-    for panel, (bk, ax) in enumerate(zip(budgets, axes)):
-        res = results[bk]
-        # Collect every method's value at each x so labels can dodge collisions.
-        col_labels = {j: [] for j in range(len(datasets))}
-        for name, m, color in LINES:
-            pts = []
-            for j, d in enumerate(datasets):
-                e = res.get(d, {}).get(m)
-                if e is None:
-                    continue
-                pts.append((j, e["mean_accept"]))
-                col_labels[j].append((e["mean_accept"], color))
-            gx = [p[0] for p in pts]
-            gy = [p[1] for p in pts]
-            ax.plot(gx, gy, color=color, linewidth=2.4, marker="o", markersize=8,
-                    markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3, label=name)
+    col = {j: [] for j in range(len(datasets))}   # j -> [(value, color, name)]
+    for name, m, color in LINES:
+        pts = []
+        for j, d in enumerate(datasets):
+            e = res.get(d, {}).get(m)
+            if e is None:
+                continue
+            pts.append((j, e["mean_accept"]))
+            col[j].append((e["mean_accept"], color, name))
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], color=color, linewidth=2.4,
+                marker="o", markersize=8, markeredgecolor=SURFACE, markeredgewidth=1.5,
+                zorder=3, label=name)
 
-        # Place value labels per column; when two points nearly coincide, stack one
-        # above / one below the marker so the numbers never overprint.
-        thresh = ymax * 0.06
-        for j, items in col_labels.items():
-            items = sorted(items)  # by value, ascending
-            for i, (y, color) in enumerate(items):
-                below = any(abs(y - y2) < thresh and y2 < y for y2, _ in items[:i])
-                if below:
-                    ax.text(j, y - ymax * 0.018, f"{y:.1f}", ha="center", va="top",
-                            fontsize=8.5, color=color, fontweight="bold")
-                else:
-                    ax.text(j, y + ymax * 0.018, f"{y:.1f}", ha="center", va="bottom",
-                            fontsize=8.5, color=color, fontweight="bold")
+    # A white halo behind every label so it stays legible where lines cross beneath it.
+    halo = dict(boxstyle="square,pad=0.12", fc=SURFACE, ec="none", alpha=0.85)
 
-        ax.grid(axis="y", color=GRID, linewidth=1, zorder=0)
-        ax.set_axisbelow(True)
-        ax.set_xticks(xs)
-        ax.set_xticklabels(datasets, fontsize=11)
-        ax.set_xlim(-0.35, len(datasets) - 0.65)
-        ax.set_ylim(0, ymax * 1.16)
-        if panel == 0:
-            ax.set_ylabel("mean acceptance length (tokens/round)")
-        ax.set_title(f"tree budget {bk}", fontsize=12, fontweight="bold", loc="left")
+    # Value labels, to the LEFT of each marker, decluttered bottom-to-top so numbers
+    # never overlap however close their markers are (gap labels go to the right).
+    min_sep = ymax * 0.05
+    for j, items in col.items():
+        last = None
+        for y, color, _n in sorted(items):
+            ty = y if last is None else max(y, last + min_sep)
+            last = ty
+            ax.text(j - 0.06, ty, f"{y:.1f}", ha="right", va="center",
+                    fontsize=9, color=color, fontweight="bold", bbox=halo, zorder=5)
 
-    axes[0].legend(frameon=False, fontsize=10, loc="upper right")
-    fig.suptitle("Per-domain acceptance", fontsize=14, fontweight="bold",
-                 x=0.01, ha="left")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    # Vertical gap labels: % lift from each line to the next one above it, per domain.
+    # Arrow sits just right of the markers; the % labels are themselves decluttered
+    # bottom-to-top so two small gaps can't overprint into an unreadable blob.
+    for j, items in col.items():
+        s = sorted(items)
+        xg = j + 0.08
+        gaps = []
+        for lower, upper in zip(s, s[1:]):
+            ylo = lower[0]
+            yhi, chi = upper[0], upper[1]
+            pct = (yhi - ylo) / ylo * 100 if ylo else float("nan")
+            ax.annotate("", xy=(xg, yhi), xytext=(xg, ylo),
+                        arrowprops=dict(arrowstyle="<->", color=chi, linewidth=1.2,
+                                        alpha=0.8, shrinkA=0, shrinkB=0), zorder=4)
+            gaps.append(((ylo + yhi) / 2, f"+{pct:.0f}%", chi))
+        last = None
+        for ymid, txt, chi in gaps:
+            ty = ymid if last is None else max(ymid, last + min_sep)
+            last = ty
+            ax.text(xg + 0.06, ty, txt, ha="left", va="center", fontsize=8.5,
+                    color=chi, fontweight="bold", bbox=halo, zorder=5)
+
+    ax.grid(axis="y", color=GRID, linewidth=1, zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_xticks(xs)
+    ax.set_xticklabels(datasets, fontsize=11)
+    ax.set_xlim(-0.5, len(datasets) - 0.4)
+    ax.set_ylim(0, ymax * 1.16)
+    ax.set_ylabel("mean acceptance length (tokens/round)")
+    ax.legend(frameon=False, fontsize=10, loc="upper right")
+    ax.set_title("Per-domain acceptance  ·  tree budget 64",
+                 fontsize=13.5, fontweight="bold", loc="left")
+    fig.tight_layout()
     fig.savefig(out, dpi=150)
     plt.close(fig)
     print(f"wrote {out}")
 
 
 def main():
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "summary.json"
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SRC
     summary = json.loads(Path(path).read_text())
-    chart(summary, Path(path).parent / "per_domain_acceptance.png")
+    res = summary["results"]
+    # exp3 nests: results.clean.<budget>.<dataset>.<arm>
+    if "clean" in res:
+        res = res["clean"]
+    if BUDGET in res:
+        res = res[BUDGET]
+    chart(res, Path(__file__).parent / "per_domain_acceptance.png")
 
 
 if __name__ == "__main__":
