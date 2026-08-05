@@ -85,8 +85,8 @@ def agg(res, bkey, arm):
     return acc_w / rounds, tok / t, ms_round
 
 
-def step_overall(res, before, after, stem, subtitle):
-    budgets = sorted(res, key=int)
+def step_overall(res, before, after, stem, subtitle, budgets=None):
+    budgets = budgets or sorted(res, key=int)
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
     fig.suptitle(f"{ARM_LABEL[before]}  →  {ARM_LABEL[after]}", fontsize=14, fontweight="bold", x=0.02, ha="left")
     axes[0].set_title("Decode throughput (tok/s, sync-on)", loc="left", fontsize=11)
@@ -120,8 +120,8 @@ def step_overall(res, before, after, stem, subtitle):
     plt.close(fig)
 
 
-def step_phases(res, before, after, stem):
-    budgets = sorted(res, key=int)
+def step_phases(res, before, after, stem, budgets=None):
+    budgets = budgets or sorted(res, key=int)
     fig, ax = plt.subplots(figsize=(10.5, 3.4 + 0.4 * len(budgets)))
     rows = []
     for bk in budgets:
@@ -154,8 +154,8 @@ def step_phases(res, before, after, stem):
     plt.close(fig)
 
 
-def ladder_hero(res):
-    budgets = sorted(res, key=int)
+def ladder_hero(res, budgets=None, suffix=""):
+    budgets = budgets or sorted(res, key=int)
     fig, ax = plt.subplots(figsize=(10.5, 4.6))
     n = len(ARMS)
     width = 0.34
@@ -168,20 +168,24 @@ def ladder_hero(res):
             x = i + (j - 0.5) * width
             bar = ax.bar(x, v, width * 0.92, color=shades[i], zorder=3)
             ax.bar_label(bar, labels=[f"{v:.0f}"], padding=2, fontsize=9)
-    ax.text(0.03, 0.96, f"total: ×{mults[0]:.1f} (b64) · ×{mults[1]:.1f} (b128) vs naive",
+    mtxt = " · ".join(f"×{m:.1f} (b{bk})" for m, bk in zip(mults, budgets))
+    ax.text(0.03, 0.96, f"total: {mtxt} vs naive",
             transform=ax.transAxes, ha="left", va="top", fontsize=11, fontweight="bold")
     ax.set_xticks(range(n))
     ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=10)
     ax.set_ylabel("decode tok/s (sync-on)")
     ax.grid(axis="y", color="#e8e8e8", zorder=0)
     ax.margins(y=0.22)
-    fig.suptitle("The speedup ladder: same trees, 11.6–16× faster construction",
+    title_m = "–".join(f"{m:.1f}" for m in sorted(mults))
+    fig.suptitle(f"The speedup ladder: same trees, {title_m}× faster construction",
                  fontsize=14, fontweight="bold", x=0.02, ha="left")
-    fig.text(0.02, 0.015, "per group: left bar = budget 64, right bar = budget 128  ·  "
+    group_note = ("per group: left bar = budget 64, right bar = budget 128  ·  "
+                  if len(budgets) > 1 else f"budget {budgets[0]}  ·  ")
+    fig.text(0.02, 0.015, group_note +
              "acceptance identical across A1–A3 (bit-identical trees); A0 differs only by full-vocab candidates",
              fontsize=8.5, color="#777777")
     fig.tight_layout(rect=(0, 0.05, 1, 0.93))
-    fig.savefig(OUT / "ladder_overall.png", dpi=160)
+    fig.savefig(OUT / f"ladder_overall{suffix}.png", dpi=160)
     plt.close(fig)
 
 
@@ -190,7 +194,11 @@ def main():
     for before, after, stem, subtitle in STEPS:
         step_overall(res, before, after, stem, subtitle)
         step_phases(res, before, after, stem)
+        # budget-64-only copies
+        step_overall(res, before, after, f"{stem}_b64", subtitle, budgets=["64"])
+        step_phases(res, before, after, f"{stem}_b64", budgets=["64"])
     ladder_hero(res)
+    ladder_hero(res, budgets=["64"], suffix="_b64")
     print("wrote:", sorted(p.name for p in OUT.glob("*.png")))
 
 
