@@ -136,26 +136,27 @@ def build_timing_rollup(results: dict, budgets: list[int], method_names: list[st
         rollup[bkey] = {}
         for name in method_names:
             def _tot(pass_name, field):
-                vals = [results[pass_name][bkey][d][name][field]
-                        for d in datasets if name in results[pass_name][bkey].get(d, {})]
+                by = results.get(pass_name, {}).get(bkey, {})
+                vals = [by[d][name][field] for d in datasets if name in by.get(d, {})]
                 return sum(vals) if vals else None
 
             clean_tokens = _tot("clean", "output_tokens")
             clean_decode = _tot("clean", "decode_time")
             inst_tokens = _tot("instrumented", "output_tokens")
             inst_decode = _tot("instrumented", "decode_time")
-            if not clean_decode or not inst_decode:
+            if not clean_decode:                      # clean pass is the floor
                 continue
             tps_clean = clean_tokens / clean_decode
-            tps_inst = inst_tokens / inst_decode
+            has_inst = bool(inst_decode)
+            tps_inst = (inst_tokens / inst_decode) if has_inst else None
 
-            # Dominant phase from the instrumented pass, summed across datasets.
+            # Dominant phase from the instrumented pass (absent in clean-only runs).
             phase_secs: dict[str, float] = {}
             for d in datasets:
-                e = results["instrumented"][bkey].get(d, {}).get(name)
+                e = results.get("instrumented", {}).get(bkey, {}).get(d, {}).get(name)
                 if not e:
                     continue
-                for ph, v in e["phases"].items():
+                for ph, v in e.get("phases", {}).items():
                     if v is not None:
                         phase_secs[ph] = phase_secs.get(ph, 0.0) + v["sec"]
             dominant = max(phase_secs, key=phase_secs.get) if phase_secs else None
@@ -163,7 +164,7 @@ def build_timing_rollup(results: dict, budgets: list[int], method_names: list[st
             rollup[bkey][name] = {
                 "tps_clean": tps_clean,
                 "tps_instrumented": tps_inst,
-                "instrumentation_tax": 1.0 - tps_inst / tps_clean,
+                "instrumentation_tax": (1.0 - tps_inst / tps_clean) if has_inst else None,
                 "dominant_phase": dominant,
                 "dominant_share": (phase_secs[dominant] / sum(phase_secs.values()))
                                   if dominant else None,

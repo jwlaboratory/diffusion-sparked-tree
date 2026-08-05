@@ -54,7 +54,9 @@ from metrics import PHASE_ORDER, sample_record, build_entry, build_timing_rollup
 # v4: sparked_tree gained tree_mode="best-first-fast" (build_sparked_tree_fast).
 # v5: sparked_tree gained tree_mode="best-first-precompute" (build_sparked_tree_precompute).
 # v5-csweep: candidate-size (C) sweep over the fast + precompute builders (exp4/2-precompute/csweep).
-CODE_VERSION = "harness-5-csweep"
+# v6-union: precompute builder now pools the deduped UNION candidate set (== fast), not per-depth
+#   top-C -- recovers the ~2-6% acceptance it was leaking. Old cache units are stale; miss them.
+CODE_VERSION = "harness-6-union"
 
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},
@@ -204,6 +206,8 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
             # With a single pass (e.g. clean-only) this is just [pass] every sample.
             order = passes if i % 2 == 0 else passes[::-1]
             for m in unit_methods:
+                if m.max_samples is not None and i >= m.max_samples:
+                    continue                       # per-method sample cap (e.g. AR subset)
                 fn = fns[(m.name, budget)]
                 if i == 0 and cfg.get("discard_first_sample"):
                     _ = fn(input_ids)  # discarded: absorbs any residual cold state
@@ -302,7 +306,7 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
         "timing": {},
         "checks": {"acceptance_match": not mismatches, "mismatched_units": mismatches},
     }
-    if "clean" in results and "instrumented" in results:
+    if "clean" in results:   # timing needs the clean pass; instrumented is optional
         summary["timing"] = build_timing_rollup(
             results, cfg["tree_budgets"], [m.name for m in methods], dataset_names)
 
@@ -319,10 +323,13 @@ def _print_rollup(summary: dict) -> None:
     for bkey in sorted(summary["timing"], key=int):
         print(f"  tree_budget {bkey}:")
         for name, r in summary["timing"][bkey].items():
-            print(f"    {name:<26} tps={r['tps_clean']:>8.2f}  "
-                  f"(instrumented {r['tps_instrumented']:>8.2f}, "
-                  f"tax {r['instrumentation_tax']*100:>5.1f}%)  "
-                  f"dominant={r['dominant_phase']} ({r['dominant_share']*100:.0f}%)")
+            if r.get("tps_instrumented") is not None:
+                extra = (f"(instrumented {r['tps_instrumented']:>8.2f}, "
+                         f"tax {r['instrumentation_tax']*100:>5.1f}%)  "
+                         f"dominant={r['dominant_phase']} ({r['dominant_share']*100:.0f}%)")
+            else:
+                extra = "(clean-only)"
+            print(f"    {name:<26} tps={r['tps_clean']:>8.2f}  {extra}")
 
 
 # --------------------------------------------------------------------------- #

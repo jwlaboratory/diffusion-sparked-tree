@@ -35,6 +35,9 @@ class Method:
     verify: str = "tree"              # "chain" | "tree" | "ddtree"
     tree_kwargs: Optional[dict] = None  # extra kwargs for sparked_tree_generate
                                         # (e.g. tree_mode/beam_schedule); verify="tree" only
+    max_samples: Optional[int] = None   # cap this method's sample count (e.g. run the
+                                        # Autoregressive 1x baseline on a subset -- its
+                                        # TPS is stable, so full samples are wasteful)
 
 
 def needs_budget(method: Method) -> bool:

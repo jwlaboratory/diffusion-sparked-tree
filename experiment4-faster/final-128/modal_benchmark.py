@@ -1,30 +1,29 @@
-"""Modal launcher for Experiment 4b (1-transfer-less): does the candidate-union
-restriction make the best-first markov tree fast WITHOUT losing acceptance?
+"""Modal launcher for Experiment 4-faster / 2-precompute / csweep: sweep the
+candidate size C on BOTH restricted best-first builders.
 
-Exp3 localized build_sparked_tree's cost to two sub-costs inside candidate_build:
-  * .prep   (tree_build_copy): copying the STATIC full-vocab markov matrices
-            W1/W2 (~311 MB) GPU->CPU every round -- budget-invariant ~120 ms.
-  * .expand (tree_build_heap): every popped node ran a full-vocab log_softmax +
-            top-k + full-vocab bias -- 178 ms/round @b64 -> 733 ms/round @b256.
+WHY sweep both. `build_sparked_tree_fast` restricts to a deduped UNION of the
+per-depth top-C tokens; `build_sparked_tree_precompute` restricts to PER-DEPTH
+top-C (it needs a fixed [L,C] table). Same C therefore means slightly different
+candidate coverage, and the two also differ in where the float reduction happens
+(serial per-pop CPU matmul vs one batched GPU baddbmm). So their acceptance-vs-C
+knees -- the smallest C at which acceptance saturates against the exact best-first
+ceiling -- need not coincide. We sweep C directly on each and read the knee off.
 
-build_sparked_tree_fast ports the beam builder's candidate-union trick into the
-best-first heap: top-k on GPU, gather only the ~U active columns/rows to CPU once,
-and run every per-pop compute on that length-U slice. The heap's adaptive
-(best-first) allocation is unchanged, so acceptance should be preserved (the
-restriction is lossy only if a bias-promoted token falls outside the top-2048 base
-candidates).
+Arms (all DSpark-b16 + dspark_b16_markov corrector, verify="tree", ONE job so TPS
+is comparable):
+  bestfirst.ref                     exact best-first (C=inf acceptance ceiling)
+  fast.c{128,256,512,1024,2048}     tree_mode best-first-fast,       beam_candidates=C
+  precompute.c{128,256,512,1024}    tree_mode best-first-precompute, beam_candidates=C
+(precompute is O(L C^2 R), so it is swept only up to 1024; fast is ~linear in C.)
 
-Two arms on the SAME backbone + corrector (DSpark-b16 + its markov head), run in
-ONE job so they see the same machine (fair TPS):
-
-  bestfirst.ref   the existing slow builder (tree_mode default "best-first")
-  bestfirst.fast  build_sparked_tree_fast (tree_mode "best-first-fast", C=2048)
-
-Everything else is matched to exp3/exp4 for comparability.
+Budget 64 only. gsm8k/humaneval/mt-bench x 8 (up from 4: acceptance deltas are
+~1-2%, near the noise floor, so more samples). Everything else identical to the
+prior runs: temp 0, max_new_tokens 512, seed 0, warmup 256, discard-first, passes
+clean+instrumented, H100 + 8 CPU.
 
 Usage:
     modal run modal_benchmark.py --smoke          # end-to-end validation, minutes
-    modal run modal_benchmark.py --spawn --detach # full run, detached (survives CLI)
+    modal run --detach modal_benchmark.py --spawn # full run, detached (survives CLI)
 """
 
 import json
@@ -43,35 +42,44 @@ BACKBONES = [
 ]
 
 CORRECTOR = "dspark_b16_markov"
-BEAM_CANDIDATES = 256  # optimal top-C (=K) shortlist; knee of the C-sweep
+
+FAST_CS = [256]
+PRECOMPUTE_CS = [256]
 
 
-METHODS = [
-    # Reference: the existing slow best-first builder (no tree_kwargs -> default
-    # tree_mode="best-first", full-vocab per-pop compute, full-matrix transfer).
-    {"name": "bestfirst.ref", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree"},
-    # Fast: same adaptive heap, restricted to the candidate union.
-    {"name": "bestfirst.fast", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree",
-     "tree_kwargs": {"tree_mode": "best-first-fast", "beam_candidates": BEAM_CANDIDATES}},
-]
+def _sweep_arm(builder_tag: str, tree_mode: str, C: int) -> dict:
+    return {
+        "name": f"{builder_tag}.c{C}", "backbone": "dspark_b16", "corrector": CORRECTOR,
+        "verify": "tree",
+        "tree_kwargs": {"tree_mode": tree_mode, "beam_candidates": C},
+    }
 
+
+METHODS = (
+    # Final-config head-to-head at budget 128, C=256: naive ref -> transfer-less
+    # fast -> precompute. One run feeds both the 1-transfer-less and 2-precompute charts.
+    [{"name": "bestfirst.ref", "backbone": "dspark_b16", "corrector": CORRECTOR, "verify": "tree"}]
+    + [_sweep_arm("fast", "best-first-fast", C) for C in FAST_CS]
+    + [_sweep_arm("precompute", "best-first-precompute", C) for C in PRECOMPUTE_CS]
+)
+
+# Holistic dataset mix: easy+hard math, standard+hard code, two chat styles.
 TASKS = [
-    ["gsm8k", 4],
-    ["humaneval", 4],
-    ["mt-bench", 4],
+    ["gsm8k", 8],
+    ["humaneval", 8],
+    ["mt-bench", 8],
 ]
 
-TREE_BUDGETS = [64]  # transfer demo shown at 64; measured optimal is 128 (see 3-budget-dataset)
+TREE_BUDGETS = [128]
 TEMPERATURE = 0.0
 MAX_NEW_TOKENS = 512
 SEED = 0
 WARMUP_TOKENS = 256
 DISCARD_FIRST_SAMPLE = True
 
-# Fresh cache namespaced for this experiment. Driver adds a config-fingerprint
-# subdirectory (folding in CODE_VERSION="harness-4-fastbf"), so stale exp3/exp4
-# units cannot be resumed against the new builder.
-CACHE_DIR = "/results/fastbf/cache"
+# Fresh cache namespaced for the C-sweep. Driver folds CODE_VERSION
+# ("harness-5-csweep") into the fingerprint, so no fastbf/precompute unit resumes here.
+CACHE_DIR = "/results/final128/cache"
 
 GPU = "H100"
 CPU = 8
@@ -85,7 +93,8 @@ FLASH_ATTN_WHEEL = (
 )
 
 HERE = Path(__file__).parent
-HARNESS_DIR = HERE.parent.parent / "harness"
+# final128/ -> 2-precompute/ -> experiment4-faster/ -> repo root; harness lives at root.
+HARNESS_DIR = HERE.parent.parent / "harness"  # 3-budget-dataset/ -> experiment4-faster/ -> repo root
 
 
 def build_run_config() -> dict:
@@ -136,7 +145,7 @@ image = (
     .add_local_dir(HARNESS_DIR.as_posix(), remote_path="/root/harness")
 )
 
-app = modal.App("ddtree-exp4-fastbf")
+app = modal.App("ddtree-exp4-final128")
 
 hf_cache = modal.Volume.from_name("ddtree-hf-cache", create_if_missing=True)
 results_vol = modal.Volume.from_name("ddtree-results", create_if_missing=True)
@@ -164,7 +173,7 @@ def run_experiment(cfg: dict) -> dict:
 
     summary = driver.run(cfg, on_checkpoint=results_vol.commit)
 
-    out = Path("/results/fastbf/summary.json")
+    out = Path("/results/final128/summary.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2))
     results_vol.commit()
@@ -175,35 +184,47 @@ def run_experiment(cfg: dict) -> dict:
 # Local entrypoint                                                             #
 # --------------------------------------------------------------------------- #
 
-def print_speed_table(summary: dict) -> None:
-    """Headline: clean-pass TPS ref vs fast, per budget, plus tree_build share."""
+def print_sweep_table(summary: dict) -> None:
+    """Headline: clean-pass TPS and dominant phase per arm (the whole C sweep)."""
     timing = summary.get("timing", {})
     if not timing:
         return
     print("\n" + "=" * 72)
-    print("Decode TPS (clean) ref vs fast, per tree budget")
+    print("Decode TPS (clean) per arm, budget 64")
     print("=" * 72)
     for bkey in sorted(timing, key=int):
         print(f"  tree_budget {bkey}:")
         for arm, r in timing[bkey].items():
-            print(f"    {arm:<18} {r['tps_clean']:>8.2f} tok/s   "
-                  f"dominant phase: {r['dominant_phase']} ({r['dominant_share']*100:.0f}%)")
+            print(f"    {arm:<22} {r['tps_clean']:>8.2f} tok/s   "
+                  f"dominant: {r['dominant_phase']} ({r['dominant_share']*100:.0f}%)")
 
 
 @app.local_entrypoint()
-def main(smoke: bool = False, spawn: bool = False):
+def main(smoke: bool = False, spawn: bool = False, parallel: int = 0):
     cfg = build_run_config()
     if smoke:
-        cfg["tasks"] = [["gsm8k", 1]]
+        # Exercise the new-dataset loaders (livecodebench multi-file download is the
+        # real risk) and both budget extremes.
+        cfg["tasks"] = [["aime24", 1], ["livecodebench", 1], ["alpaca", 1]]
         cfg["max_new_tokens"] = 64
-        cfg["tree_budgets"] = [64]
+        cfg["tree_budgets"] = [16, 256]
         cfg["warmup_tokens"] = 32
 
     if spawn:
-        call = run_experiment.spawn(cfg)
-        print(f"spawned: {call.object_id}")
-        print("progress:  modal volume ls ddtree-results fastbf/cache")
-        print("fetch:     modal volume get ddtree-results fastbf/summary.json")
+        # parallel>1: fan out N containers over the SHARED checkpoint dir, each
+        # starting on a rotated slice of the unit grid (shard_offset, excluded from
+        # fingerprint). They resume already-done units; any that finishes assembles
+        # the full summary from cache. ~N x faster wall-clock.
+        n_units = len(cfg["tasks"]) * len(cfg["tree_budgets"])
+        n = max(1, int(parallel))
+        offsets = [i * n_units // n for i in range(n)] if n > 1 else [0]
+        ids = []
+        for off in offsets:
+            call = run_experiment.spawn({**cfg, "shard_offset": off})
+            ids.append(call.object_id)
+        print(f"spawned {len(ids)} shard(s) offsets={offsets}: {ids}")
+        print("progress:  modal volume ls ddtree-results final128/cache")
+        print("fetch:     modal volume get ddtree-results final128/summary.json")
         return
 
     summary = run_experiment.remote(cfg)
@@ -218,4 +239,4 @@ def main(smoke: bool = False, spawn: bool = False):
         print("WARNING: acceptance mismatch between clean and instrumented passes!")
         print("         mismatched units:", summary["checks"]["mismatched_units"])
 
-    print_speed_table(summary)
+    print_sweep_table(summary)

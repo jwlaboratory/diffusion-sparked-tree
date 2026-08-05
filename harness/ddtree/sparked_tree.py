@@ -412,25 +412,42 @@ def build_sparked_tree_fast(
     return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
 
 
-def _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root):
-    """Every branch-conditional transition best-first could ever ask for, at once.
+def _union_transition_topk(base_active, w1_u, w2_u, topk):
+    """Top-k of every branch-conditional transition the walk could ask for, over a
+    single DEDUPED-UNION candidate set (the same set build_sparked_tree_fast uses).
 
-    A node at depth d always holds an element of the depth d-1 candidate set -- the
-    builder has nothing else to select from -- so the complete set of transitions is
-    a finite [L-1, C, C] tensor that depends on the candidate sets alone, not on
-    which nodes get expanded. The logsumexp normaliser is a function of
-    (depth, parent slot) only, so it folds into the same precompute.
+    Unlike the old per-depth [L,C,C] form, the candidate set here is depth-independent
+    (one union of U tokens shared by every depth), so the markov bias
 
-    Returns (root_logp [C], table_logp [L-1, C, C]), both log-normalised over the
-    candidate set exactly as the per-node builder normalises over its active set.
+        bias[p, c] = w1_u[p] . w2_u[c]                                   # [U, U]
+
+    is computed ONCE and broadcast across depth. A node at depth d (its own depth;
+    root == 0) draws its children from row d of the base logits, conditioned on the
+    node's own union slot p:
+
+        table_logits[d, p, c] = base_active[d, c] + bias[p, c]
+
+    normalised (log_softmax) over c in U -- byte-for-byte the same distribution
+    build_sparked_tree_fast.conditioned_topk(d, prev=p) computes, only batched. So the
+    two builders now agree at the SAME candidate set (up to matmul reduction epsilon),
+    which is what makes precompute inherit fast's acceptance.
+
+    We materialise ONE depth's [U, U] slab at a time and top-k it, rather than the
+    whole [L, U, U] stack: with high-entropy logits U approaches L*C (little overlap),
+    so [L, U, U] can reach multiple GB, while a single slab stays ~U^2. Returns
+    (vals [L, U, topk], slots [L, U, topk]); slots index into the union.
     """
-    root = logits_cand[0] + (w1_root.float() @ w2_cand[0].T).reshape(-1)
-    root_logp = root - torch.logsumexp(root, dim=-1)
-
-    # [L-1, C, R] @ [L-1, R, C] -> [L-1, C, C], plus the per-depth base logits.
-    table = torch.baddbmm(logits_cand[1:].unsqueeze(1), w1_cand[:-1], w2_cand[1:].transpose(1, 2))
-    table_logp = table - torch.logsumexp(table, dim=-1, keepdim=True)
-    return root_logp, table_logp
+    depth_limit, union_size = base_active.shape
+    bias = (w1_u @ w2_u.T) if w1_u is not None else None     # [U, U] or None (no corrector)
+    vals = base_active.new_empty((depth_limit, union_size, topk))
+    slots = base_active.new_empty((depth_limit, union_size, topk), dtype=torch.long)
+    for d in range(depth_limit):
+        row = base_active[d].unsqueeze(0)                     # [1, U]
+        slab = row + bias if bias is not None else row.expand(union_size, -1)
+        slab = slab - torch.logsumexp(slab, dim=-1, keepdim=True)
+        v, s = torch.topk(slab, k=topk, dim=-1)              # [U, topk]
+        vals[d], slots[d] = v, s
+    return vals, slots
 
 
 def build_sparked_tree_precompute(
@@ -451,15 +468,21 @@ def build_sparked_tree_precompute(
       * fast: the transition for each popped node is a per-pop CPU matmul
         (`w2_active @ w1_active[prev]`), a *serial* loop ~linear in budget. That is
         the `.expand` / tree_build_heap cost that stays dominant at large budgets.
-      * precompute: a node at depth d always holds an element of the depth d-1
-        candidate set, so the whole [L-1, C, C] transition stack is one batched GPU
-        matmul with no dependence on the walk. Resolve it, take the per-row top-k
-        once, ship it to CPU in ONE transfer -- then the heap walk is pure CPU array
-        indexing (no matmul, no cache miss possible).
+      * precompute: the candidate set is a single DEDUPED UNION of size U (exactly
+        the set `fast` uses), depth-independent, so the whole [L, U, U] transition
+        stack is one batched GPU matmul (bias = w1_u @ w2_u.T, broadcast over depth)
+        with no dependence on the walk. Resolve it, take the per-row top-k once, ship
+        it to CPU in ONE transfer -- then the heap walk is pure CPU array indexing.
 
-    The cost is O(L C^2 R): transitions for all C possible parents when at most
-    `budget` are used. Quadratic in C, so this builder wants C in the hundreds
-    (default 512) rather than the fast builder's 2048.
+    Because the candidate set and its normaliser now match `fast` token-for-token,
+    the two builders build the SAME best-first tree (up to matmul reduction epsilon)
+    and precompute inherits fast's acceptance -- earlier per-depth-top-C precompute
+    normalised over a depth-varying set and lost ~2-6% acceptance vs the union.
+
+    The cost is O(L U^2): the union is richer than a per-depth top-C set (U can
+    exceed C), but U is bounded by the union of L per-depth top-C shortlists and
+    heavily deduped in practice. Keep C moderate (512) so U stays in the low
+    thousands.
 
     Timing buckets (harness contract): the GPU precompute + top-k + single transfer
     land in `tree_build_copy` (fast's `.prep` bucket -- this is where the batched
@@ -467,9 +490,7 @@ def build_sparked_tree_precompute(
     bucket, now trivial). So the two buckets isolate the mechanism head-to-head.
 
     max_fanout bounds how many siblings ONE node may contribute (= transferred slice
-    width). 0 = the safe bound (budget). Uses per-depth top-C candidates rather than
-    a deduped union, because the table needs a fixed [L, C] shape and per-depth is
-    slightly tighter anyway.
+    width). 0 = the safe bound (budget).
     """
     build_subtimes = empty_stage_times(DDTREE_TREE_BUILD_STAGE_ORDER)
 
@@ -491,45 +512,47 @@ def build_sparked_tree_precompute(
     copy_start = cuda_time()
     logits = base_logits.float()
     device = logits.device
-    candidate_count = int(min(candidates or vocab_size, vocab_size))
-    topk = min(int(max_fanout) or budget, budget, candidate_count)
 
-    logits_cand, cand_ids = torch.topk(logits, k=candidate_count, dim=-1)   # [L, C]
-    flat_ids = cand_ids.reshape(-1)
+    # Deduped-union candidate set, identical to build_sparked_tree_fast: the union of
+    # every depth's top-C base tokens, plus the root token (it conditions depth 1, so
+    # its w1 row must be present). torch.unique returns SORTED unique ids -> local
+    # slot == position in cand_ids.
+    if candidates and int(candidates) < vocab_size:
+        topk_idx = torch.topk(logits, k=min(int(candidates), vocab_size), dim=-1).indices.reshape(-1)
+        root_t = torch.tensor([int(root_token_id)], dtype=topk_idx.dtype, device=device)
+        cand_ids = torch.unique(torch.cat([topk_idx, root_t]))                 # [U]
+    else:
+        cand_ids = torch.arange(vocab_size, device=device)                     # full vocab, in order
+    union_size = int(cand_ids.shape[0])
+    topk = min(int(max_fanout) or budget, budget, union_size)
+
+    base_active = logits.index_select(1, cand_ids)                             # [L, U]
     if markov_head is not None:
         w1 = markov_head.markov_w1.weight.detach().float()   # [vocab, rank]
         w2 = markov_head.markov_w2.weight.detach().float()   # [vocab, rank]
-        w1_cand = w1.index_select(0, flat_ids).view(depth_limit, candidate_count, -1)
-        w2_cand = w2.index_select(0, flat_ids).view(depth_limit, candidate_count, -1)
-        w1_root = w1.index_select(0, torch.tensor([int(root_token_id)], device=device))
-        root_logp, table_logp = _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root)
+        w1_u = w1.index_select(0, cand_ids)                                    # [U, rank]
+        w2_u = w2.index_select(0, cand_ids)                                    # [U, rank]
     else:
-        # No corrector: every parent at a depth shares that depth's base distribution.
-        base_logp = logits_cand - torch.logsumexp(logits_cand, dim=-1, keepdim=True)   # [L, C]
-        root_logp = base_logp[0]                                                       # [C]
-        table_logp = base_logp[1:].unsqueeze(1).expand(-1, candidate_count, -1)        # [L-1, C, C]
+        w1_u = w2_u = None                                                     # no corrector
 
-    root_vals, root_slots = torch.topk(root_logp, k=topk, dim=-1)          # [k]
-    table_vals, table_slots = torch.topk(table_logp, k=topk, dim=-1)       # [L-1, C, k]
+    # Per (depth, parent-slot) top-k over the union; slots index into cand_ids.
+    table_vals, table_slots = _union_transition_topk(base_active, w1_u, w2_u, topk)   # [L, U, k]
 
     # ONE transfer for every table the walk can reach. Slots / token ids ride
     # through float32 exactly (vocab << 2^24), the same pack trick as elsewhere.
     flat = torch.cat([
-        root_vals, table_vals.reshape(-1),
-        root_slots.float(), table_slots.reshape(-1).float(),
-        flat_ids.float(),
+        table_vals.reshape(-1),
+        table_slots.reshape(-1).float(),
+        cand_ids.float(),
     ]).cpu().numpy()
     build_subtimes["tree_build_copy"] = cuda_time() - copy_start
 
-    table_count = 1 + (depth_limit - 1) * candidate_count
-    span = table_count * topk
-    vals = flat[:span].reshape(table_count, topk)
-    slots = flat[span:2 * span].reshape(table_count, topk).astype(np.int64)
-    cand = flat[2 * span:].reshape(depth_limit, candidate_count).astype(np.int64)
+    span = depth_limit * union_size * topk
+    vals = flat[:span].reshape(depth_limit, union_size, topk)
+    slots = flat[span:2 * span].reshape(depth_limit, union_size, topk).astype(np.int64)
+    cand = flat[2 * span:].astype(np.int64)                                    # [U] global token ids
 
-    # Row of the children table for a node at `depth` holding candidate `slot`.
-    def child_row(depth, slot):
-        return 1 + (depth - 1) * candidate_count + slot
+    root_slot = int(np.searchsorted(cand, int(root_token_id)))                 # cand is sorted
 
     # --- Pure-CPU best-first heap walk (tree_build_heap) --------------------------
     heap_start = time.perf_counter()
@@ -538,18 +561,23 @@ def build_sparked_tree_precompute(
     parents_np = np.empty(budget + 1, dtype=np.int32)
     parents_np[0] = -1
     child_maps: list[dict[int, int]] = [dict()]
-    node_rows = np.zeros(budget + 1, dtype=np.int64)   # node 0 is the root -> row 0
+    # A node's own (depth, union-slot) selects the table row for ITS children:
+    # vals/slots[depth, slot]. Node 0 is the root anchor at depth 0, slot root_slot.
+    node_self_depth = np.zeros(budget + 1, dtype=np.int64)
+    node_self_slot = np.zeros(budget + 1, dtype=np.int64)
+    node_self_slot[0] = root_slot
     node_count = 0
     tiebreak = 0
 
-    first_logw = float(vals[0, 0])
+    first_logw = float(vals[0, root_slot, 0])
     heap: list[tuple[float, int, int, int, int, float]] = [(-first_logw, tiebreak, 0, 1, 0, first_logw)]
 
     while heap and node_count < budget:
         _, _, parent_index, depth, rank, logw = heapq.heappop(heap)
-        parent_row = int(node_rows[parent_index])
-        slot = int(slots[parent_row, rank])
-        token_id = int(cand[depth - 1, slot])
+        p_depth = int(node_self_depth[parent_index])
+        p_slot = int(node_self_slot[parent_index])
+        slot = int(slots[p_depth, p_slot, rank])
+        token_id = int(cand[slot])
 
         current_index = node_count + 1
         node_token_ids_np[node_count] = token_id
@@ -557,19 +585,19 @@ def build_sparked_tree_precompute(
         parents_np[current_index] = parent_index
         child_maps.append(dict())
         child_maps[parent_index][token_id] = current_index
+        node_self_depth[current_index] = depth
+        node_self_slot[current_index] = slot
         node_count += 1
 
         # Sibling: next-best child of the SAME parent (same table row).
         if rank + 1 < topk:
-            sibling_logw = logw - float(vals[parent_row, rank]) + float(vals[parent_row, rank + 1])
+            sibling_logw = logw - float(vals[p_depth, p_slot, rank]) + float(vals[p_depth, p_slot, rank + 1])
             tiebreak += 1
             heapq.heappush(heap, (-sibling_logw, tiebreak, parent_index, depth, rank + 1, sibling_logw))
 
-        # Child: this node's own best child, via its precomputed table row.
+        # Child: this node's own best child, via its precomputed table row (depth, slot).
         if depth < depth_limit:
-            row = child_row(depth, slot)
-            node_rows[current_index] = row
-            child_logw = logw + float(vals[row, 0])
+            child_logw = logw + float(vals[depth, slot, 0])
             tiebreak += 1
             heapq.heappush(heap, (-child_logw, tiebreak, current_index, depth + 1, 0, child_logw))
     build_subtimes["tree_build_heap"] = time.perf_counter() - heap_start

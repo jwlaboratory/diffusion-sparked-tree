@@ -66,12 +66,12 @@ def fig_speedup(s, b, fast, pre, K, out):
                         Patch(facecolor=RED,label="precompute — one upfront matmul + table lookup")],
                loc="lower center",ncol=1,frameon=False,fontsize=9.5,bbox_to_anchor=(0.5,-0.04))
     fig.suptitle(f"Precompute vs the transfer-less best (budget {b}, top-K={K})",fontsize=13.5,fontweight="bold",x=0.02,ha="left")
-    fig.text(0.02,0.90,"SparklingTree_b16, h100, bench x8. Same builder inputs; only where the markov arithmetic runs differs.",fontsize=9,color=INK2)
+    fig.text(0.02,0.90,"SparklingTree_b16, h100. Same builder inputs; only where the markov arithmetic runs differs.",fontsize=9,color=INK2)
     fig.tight_layout(rect=(0,0.06,1,0.92)); fig.savefig(out,dpi=150,bbox_inches="tight"); print("wrote",out)
 
 def fig_phase(s, b, fast, pre, K, out):
     fig,ax=plt.subplots(figsize=(11,3.4)); ax.grid(axis="x",color=GRID,lw=1); ax.set_axisbelow(True)
-    rows=[(fast,"fast",0),(pre,"precompute",1)]  # y=0 bottom=fast, y=1 top=precompute (matches yticklabels)
+    rows=[(pre,"precompute",0),(fast,"fast",1)]  # new(precompute) bottom, old(fast) top -- matches 1-transfer-less
     xmax=max(ms_round(s,b,fast)["_total"],ms_round(s,b,pre)["_total"])*1.16
     for y,(arm,lab,_) in enumerate(rows):
         seg=ms_round(s,b,arm); left=0.0
@@ -80,10 +80,10 @@ def fig_phase(s, b, fast, pre, K, out):
             if v>seg["_total"]*0.05: ax.text(left+v/2,y,f"{v:.0f}",ha="center",va="center",fontsize=8.5,color="white",fontweight="bold",zorder=4)
             left+=v
         ax.text(left+xmax*0.005,y,f"{seg['_total']:.0f} ms/round",ha="left",va="center",fontsize=9.5,color=INK,fontweight="bold")
-    ax.set_yticks([0,1]); ax.set_yticklabels(["fast\n(per-pop matmul)","precompute\n(table lookup)"]); ax.set_ylim(-0.6,1.6); ax.set_xlim(0,xmax)
+    ax.set_yticks([0,1]); ax.set_yticklabels(["precompute\n(table lookup)","fast\n(per-pop matmul)"]); ax.set_ylim(-0.6,1.6); ax.set_xlim(0,xmax)
     ef,ep=ms_round(s,b,fast)["cb_expand"],ms_round(s,b,pre)["cb_expand"]
     tf2,tp2=ms_round(s,b,fast)["_total"],ms_round(s,b,pre)["_total"]
-    ax.set_title(f"budget {b}, top-K={K} — precompute drives .expand {ef:.1f}→{ep:.2f} ms/round (total {tf2:.0f}→{tp2:.0f}, ~{100*(tf2-tp2)/tf2:.0f}%), a small win at b64",fontsize=11,fontweight="bold",loc="left")
+    ax.set_title(f"budget {b}, top-K={K} — precompute drives .expand {ef:.1f}→{ep:.2f} ms/round (total {tf2:.0f}→{tp2:.0f} ms, {100*(tf2-tp2)/tf2:.0f}% faster/round)",fontsize=11,fontweight="bold",loc="left")
     ax.set_xlabel("decode time per round (ms), instrumented pass")
     fig.legend(handles=[Patch(facecolor=c,label=n) for _,n,c in PHASE_SEGS],loc="lower center",ncol=5,frameon=False,fontsize=9.5,bbox_to_anchor=(0.5,-0.05))
     fig.tight_layout(rect=(0,0.08,1,1)); fig.savefig(out,dpi=150,bbox_inches="tight"); print("wrote",out)

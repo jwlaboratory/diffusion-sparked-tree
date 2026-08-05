@@ -7,12 +7,12 @@ identical: baddbmm reduces in a different order than the per-node w2 @ w1[prev],
 paths that score within float32 epsilon can diverge. We therefore assert a HIGH tree
 agreement rate rather than bit-identity, and also cover the markov_head=None path.
 
-NB: this gates the WALK (pop order), not real-model acceptance parity. Both builders
-use C=512, but the fast builder pools a deduped UNION of per-depth top-C while this
-builder uses PER-DEPTH top-C (the table needs a fixed [L,C] shape). On synthetic
-logits the markov bias is too weak to promote a token across that gap, so trees are
-100% identical here; on the real model the stronger bias makes the union slightly
-richer, which is the ~2-6% acceptance delta measured in RESULTS.md (finding #4).
+NB: this gates the WALK (pop order), not real-model acceptance parity. As of the
+union fix (finding #4) BOTH builders pool the SAME deduped UNION of per-depth top-C,
+so they build the same tree and precompute inherits fast's acceptance. Previously
+precompute used PER-DEPTH top-C, which normalised over a depth-varying set and lost
+~2-6% acceptance on the real model; test_agreement_strong_bias() is the regression
+guard for that (strong bias + small C, the condition the per-depth builder failed).
 
 Run: cd harness/ddtree && python .../2-precompute/test_precompute_builder.py
 (or from repo root with harness/ddtree on PYTHONPATH).
@@ -66,11 +66,11 @@ def _tree_key(node_token_ids, node_depths, parents):
     return tuple(sorted((int(d), int(t), int(p)) for d, t, p in zip(deps, toks, parents[1:])))
 
 
-def _make_inputs(seed, depth=16, vocab=2000, rank=32):
+def _make_inputs(seed, depth=16, vocab=2000, rank=32, bias_scale=0.1):
     g = torch.Generator().manual_seed(seed)
     base_logits = torch.randn(depth, vocab, generator=g)
-    w1 = torch.randn(vocab, rank, generator=g) * 0.1
-    w2 = torch.randn(vocab, rank, generator=g) * 0.1
+    w1 = torch.randn(vocab, rank, generator=g) * bias_scale
+    w2 = torch.randn(vocab, rank, generator=g) * bias_scale
     head = _MarkovHead(w1, w2)
     root = int(torch.randint(0, vocab, (1,), generator=g).item())
     return base_logits, head, root
@@ -95,6 +95,34 @@ def test_agreement():
     overall = 100.0 * total_agree / total_nodes
     print(f"\nOverall node agreement (fast vs precompute, C=512): {overall:.2f}%")
     assert overall > 95.0, f"tree agreement too low: {overall:.2f}%"
+
+
+def test_agreement_strong_bias():
+    """Regression guard for the UNION fix (finding #4).
+
+    The old precompute pooled PER-DEPTH top-C candidates; fast pools a deduped UNION.
+    On weak synthetic bias (test_agreement) the markov term never promotes a token
+    across that gap, so both scored 100% and the ~2-6% real-model acceptance leak was
+    invisible here. This test cranks the bias up (bias_scale=3.0) at SMALL C so the
+    markov term routinely promotes tokens the per-depth top-C set omits but the union
+    keeps -- the real-model condition. The union precompute must still match fast:
+    a per-depth builder would diverge markedly here."""
+    print("\nstrong-bias agreement (fast vs precompute, small C):")
+    total_agree, total_nodes = 0, 0
+    for seed in range(6):
+        base_logits, head, root = _make_inputs(seed, depth=16, vocab=2000, rank=32, bias_scale=3.0)
+        for budget in (64, 256):
+            for C in (128, 256):
+                f_tok, f_dep, f_par, *_ = build_sparked_tree_fast(base_logits, head, root, budget, C)
+                p_tok, p_dep, p_par, *_ = build_sparked_tree_precompute(base_logits, head, root, budget, C)
+                fk, pk = _tree_key(f_tok, f_dep, f_par), _tree_key(p_tok, p_dep, p_par)
+                inter = len(set(fk) & set(pk))
+                denom = max(len(fk), len(pk), 1)
+                total_agree += inter
+                total_nodes += denom
+    overall = 100.0 * total_agree / total_nodes
+    print(f"Overall strong-bias agreement (fast vs precompute, C in 128/256): {overall:.2f}%")
+    assert overall > 99.0, f"union precompute diverges from fast under strong bias: {overall:.2f}%"
 
 
 def test_reference_equivalence():
@@ -168,6 +196,7 @@ if __name__ == "__main__":
     test_empty_budget()
     test_no_corrector_path()
     test_agreement()
+    test_agreement_strong_bias()
     test_reference_equivalence()
     test_reference_equivalence_no_corrector()
     print("\nAll precompute builder checks passed.")

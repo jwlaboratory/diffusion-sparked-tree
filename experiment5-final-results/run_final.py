@@ -24,17 +24,27 @@ GPU = "H100"
 CPU = 8
 
 # --- SparklingTree (ours): fill C / K / B from the exp4 csweep winner ---------
-OUR_TREE_MODE = "best-first-precompute"   # csweep winner
-C             = 256        # candidate pool per depth        (beam_candidates)  <- csweep
-K             = 0          # max fanout per node, 0 = budget  (max_fanout)       <- default (not swept)
+OUR_TREE_MODE = "best-first-precompute"   # csweep winner (now UNION-based, == fast's candidate set)
+# C is the per-depth top-C shortlist that seeds the deduped UNION candidate set. Post
+# union-fix (driver CODE_VERSION harness-6-union) precompute normalises over that union
+# exactly like `fast`. `fast` acceptance is on-plateau by C=128 (c128 8.05, c256 8.12,
+# c512 8.13 -- ~1% apart), while build cost is O(L*U^2) with the union size U growing
+# with C. So low C is the sweet spot: C=128 sits on the acceptance plateau while keeping
+# U (hence the per-round top-k over the [U,U] slab) smallest -- the literal realisation
+# of "fast's acceptance at precompute's speed". (Old per-depth precompute leaked ~0.5
+# tok/round here: c256 gave 7.58 vs fast's 8.12; the union recovers it at any C.)
+# NB: C also changes the method fingerprint -> fresh run tag, so the merge never unions
+# these units with the old per-depth (harness-5) cache.
+C             = 128        # per-depth shortlist feeding the union  (beam_candidates)
+K             = 256        # max fanout per node (max_fanout); clamped to budget internally
 # Tree node budgets, per method. DDTree at {64,256}; SparklingTree at its best
 # budget (leave as a list; narrow to the csweep winner when known). Both tree
 # methods actually run at the UNION of these (BUDGETS) -- so if SparklingTree's
 # budget falls outside {64,256}, DDTree will also run there (harmless extra data;
 # the headline just reads DDTree@{64,256} and SparklingTree@its budget).
 DDTREE_BUDGETS    = [64, 256]
-SPARKLING_BUDGETS = [64]         # csweep winner; SparklingTree headline reads @64
-BUDGETS           = sorted(set(DDTREE_BUDGETS) | set(SPARKLING_BUDGETS))  # = [64, 256]
+SPARKLING_BUDGETS = [128]        # csweep winner; SparklingTree headline reads @128
+BUDGETS           = sorted(set(DDTREE_BUDGETS) | set(SPARKLING_BUDGETS))  # = [64, 128, 256]
 
 # --- which methods to include in the comparison ------------------------------
 INCLUDE_AUTOREGRESSIVE = True   # plain target decode -- the 1× speedup baseline
@@ -49,9 +59,13 @@ INCLUDE_SPARKLINGTREE  = True   # ours: DSpark-b16 + markov head + precompute tr
 #     speculator-relative view instead.
 SPEEDUP_BASELINE = "Autoregressive"
 
+# NOTE: sample counts and methods are fingerprinted; changing them forces a full
+# restart (loses cached units). Dropping the instrumented pass (see build_run_config
+# below) is NOT fingerprinted, so it speeds up the run while REUSING done units.
+# (AR-subset / fewer-samples cuts were considered but would restart, so kept off.)
+
 # --- evaluation : full DDTree-paper protocol (arXiv 2604.12989, Table 2) ------
-#     10 benchmarks, full test sets, 2048 new tokens. Trim for quick runs (or use
-#     `modal run run_final.py --smoke`). This is a large multi-hour H100 sweep.
+#     10 benchmarks, full test sets, 2048 new tokens.
 DATASETS = [
     ["math500", 128], ["gsm8k", 128], ["aime24", 30], ["aime25", 30],
     ["humaneval", 164], ["mbpp", 128], ["livecodebench", 128], ["swe-bench", 128],
@@ -133,7 +147,8 @@ def build_run_config() -> dict:
         "methods": methods,
         "tasks": DATASETS,
         "tree_budgets": BUDGETS,
-        "passes": ["clean", "instrumented"],
+        "passes": ["clean"],   # drop instrumented (~2x). Not fingerprinted -> reuses
+                                # cached units. Loses only the per-phase breakdown.
         "temperature": TEMPERATURE,
         "max_new_tokens": MAX_NEW_TOKENS,
         "seed": SEED,

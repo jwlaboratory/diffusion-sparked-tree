@@ -16,7 +16,7 @@
    ]
   ],
   "tree_budgets": [
-   64
+   128
   ],
   "passes": [
    "clean",
@@ -44,15 +44,6 @@
     "verify": "tree",
     "tree_kwargs": null
    },
-   "fast.c128": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-fast",
-     "beam_candidates": 128
-    }
-   },
    "fast.c256": {
     "backbone": "dspark_b16",
     "corrector": "dspark_b16_markov",
@@ -62,42 +53,6 @@
      "beam_candidates": 256
     }
    },
-   "fast.c512": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-fast",
-     "beam_candidates": 512
-    }
-   },
-   "fast.c1024": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-fast",
-     "beam_candidates": 1024
-    }
-   },
-   "fast.c2048": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-fast",
-     "beam_candidates": 2048
-    }
-   },
-   "precompute.c128": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-precompute",
-     "beam_candidates": 128
-    }
-   },
    "precompute.c256": {
     "backbone": "dspark_b16",
     "corrector": "dspark_b16_markov",
@@ -105,24 +60,6 @@
     "tree_kwargs": {
      "tree_mode": "best-first-precompute",
      "beam_candidates": 256
-    }
-   },
-   "precompute.c512": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-precompute",
-     "beam_candidates": 512
-    }
-   },
-   "precompute.c1024": {
-    "backbone": "dspark_b16",
-    "corrector": "dspark_b16_markov",
-    "verify": "tree",
-    "tree_kwargs": {
-     "tree_mode": "best-first-precompute",
-     "beam_candidates": 1024
     }
    }
   },
@@ -138,494 +75,494 @@
   ],
   "cpp_compact_live": true,
   "code_version": "harness-5-csweep",
-  "fingerprint": "0e3e08d8f935",
+  "fingerprint": "c05fc20203d4",
   "metric": "decode timings (two-pass) + acceptance",
-  "note": "C=256, budget=64, sourced from b64 C-sweep n=8"
+  "note": "precompute-optimal budget=128, C=256"
  },
  "results": {
   "clean": {
-   "64": {
+   "128": {
     "gsm8k": {
      "bestfirst.ref": {
-      "tps_decode": 42.913120375434644,
-      "ttft": 0.021293922374990615,
-      "output_tokens": 2442,
-      "rounds": 229,
-      "decode_time": 56.90567310500003,
-      "mean_accept": 10.698689956331878,
+      "tps_decode": 23.61787418808619,
+      "ttft": 0.029877465624997157,
+      "output_tokens": 2347,
+      "rounds": 221,
+      "decode_time": 99.37388866199997,
+      "mean_accept": 10.656108597285067,
       "budget_invariant": false
      },
      "bestfirst.fast": {
-      "tps_decode": 304.00871712563105,
-      "ttft": 0.02122498049999244,
-      "output_tokens": 2483,
-      "rounds": 241,
-      "decode_time": 8.167528955999984,
-      "mean_accept": 10.336099585062241,
+      "tps_decode": 198.084206196064,
+      "ttft": 0.030078703000002704,
+      "output_tokens": 2305,
+      "rounds": 220,
+      "decode_time": 11.636465341000019,
+      "mean_accept": 10.513636363636364,
       "budget_invariant": false
      }
     },
     "humaneval": {
      "bestfirst.ref": {
-      "tps_decode": 34.32866193651259,
-      "ttft": 0.02051838675000539,
-      "output_tokens": 3717,
-      "rounds": 420,
-      "decode_time": 108.27686808399983,
-      "mean_accept": 8.892857142857142,
+      "tps_decode": 20.18704050176136,
+      "ttft": 0.029710360375013067,
+      "output_tokens": 3751,
+      "rounds": 398,
+      "decode_time": 185.81227890600002,
+      "mean_accept": 9.452261306532664,
       "budget_invariant": false
      },
      "bestfirst.fast": {
-      "tps_decode": 275.33109844594225,
-      "ttft": 0.01975035362499966,
-      "output_tokens": 3739,
-      "rounds": 425,
-      "decode_time": 13.580013377,
-      "mean_accept": 8.823529411764707,
+      "tps_decode": 182.35313866640521,
+      "ttft": 0.029372986375022947,
+      "output_tokens": 3663,
+      "rounds": 390,
+      "decode_time": 20.087397599999917,
+      "mean_accept": 9.415384615384616,
       "budget_invariant": false
      }
     },
     "mt-bench": {
      "bestfirst.ref": {
-      "tps_decode": 19.656958834847345,
-      "ttft": 0.020783787250010732,
-      "output_tokens": 2218,
-      "rounds": 430,
-      "decode_time": 112.83535864499993,
-      "mean_accept": 5.183720930232558,
+      "tps_decode": 11.5422148838942,
+      "ttft": 0.03087841812499903,
+      "output_tokens": 2146,
+      "rounds": 392,
+      "decode_time": 185.92618674899995,
+      "mean_accept": 5.528061224489796,
       "budget_invariant": false
      },
      "bestfirst.fast": {
-      "tps_decode": 160.65808210409284,
-      "ttft": 0.019684439624995775,
-      "output_tokens": 2184,
-      "rounds": 423,
-      "decode_time": 13.594087340000442,
-      "mean_accept": 5.198581560283688,
+      "tps_decode": 105.1107887370758,
+      "ttft": 0.02898089212497723,
+      "output_tokens": 2172,
+      "rounds": 414,
+      "decode_time": 20.663911155999813,
+      "mean_accept": 5.285024154589372,
       "budget_invariant": false
      }
     }
    }
   },
   "instrumented": {
-   "64": {
+   "128": {
     "gsm8k": {
      "bestfirst.ref": {
-      "tps_decode": 43.446069176400265,
-      "ttft": 0.021163926875001238,
-      "output_tokens": 2442,
-      "rounds": 229,
-      "decode_time": 56.20761662200006,
-      "mean_accept": 10.698689956331878,
+      "tps_decode": 23.860951259387992,
+      "ttft": 0.030036412624996345,
+      "output_tokens": 2347,
+      "rounds": 221,
+      "decode_time": 98.36154369899995,
+      "mean_accept": 10.656108597285067,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 1.1502437259999994,
-        "sec_per_token": 0.00047102527682227655,
-        "share": 0.02046419676065371
+        "sec": 1.5088677420002483,
+        "sec_per_token": 0.0006428920928846393,
+        "share": 0.015340016893366315
        },
        "candidate_build": {
-        "sec": 47.25762262600013,
-        "sec_per_token": 0.01935201581736287,
-        "share": 0.8407690179039393
+        "sec": 85.12464308599982,
+        "sec_per_token": 0.0362695539352364,
+        "share": 0.8654260586484196
        },
        "candidate_pack": {
-        "sec": 0.08794973400017625,
-        "sec_per_token": 3.6015452088524263e-05,
-        "share": 0.0015647298228573545
+        "sec": 0.09368565799995565,
+        "sec_per_token": 3.991719556879235e-05,
+        "share": 0.0009524622578784127
        },
        "verify": {
-        "sec": 5.322802759999888,
-        "sec_per_token": 0.0021796899099098643,
-        "share": 0.09469895860904562
+        "sec": 7.252725384000101,
+        "sec_per_token": 0.0030902110711547087,
+        "share": 0.07373537575004366
        },
        "walk_accept": {
-        "sec": 0.04359390699988808,
-        "sec_per_token": 1.7851722768176935e-05,
-        "share": 0.0007755871823041348
+        "sec": 0.05702549699972792,
+        "sec_per_token": 2.429718662110265e-05,
+        "share": 0.0005797539857063844
        },
        "kv_update": {
-        "sec": 0.252221551000261,
-        "sec_per_token": 0.0001032848284194353,
-        "share": 0.004487319800383418
+        "sec": 0.33425712999972745,
+        "sec_per_token": 0.00014241888794193757,
+        "share": 0.0033982501435988123
        },
        "state_carry": {
-        "sec": 0.009217424000041774,
-        "sec_per_token": 3.774538902556009e-06,
-        "share": 0.0001639888782694623
+        "sec": 0.011819728000304508,
+        "sec_per_token": 5.0361005540283375e-06,
+        "share": 0.00012016614985704702
        },
        "unaccounted": {
-        "sec": 0.0491435549996595,
-        "sec_per_token": 2.0124305896666462e-05,
-        "share": 0.0008743219861136109
+        "sec": 0.056875053000055686,
+        "sec_per_token": 2.423308606734371e-05,
+        "share": 0.0005782244855174426
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 22.459683171000293,
-        "sec_per_token": 0.009197249455774076
+        "sec": 25.820014794999977,
+        "sec_per_token": 0.011001284531316565
        },
        "candidate_build.expand": {
-        "sec": 24.493191396000057,
-        "sec_per_token": 0.01002997190663393
+        "sec": 58.878695442999685,
+        "sec_per_token": 0.025086789707285763
        },
        "candidate_build.visibility": {
-        "sec": 0.015937602000221318,
-        "sec_per_token": 6.526454545545176e-06
+        "sec": 0.02530856999997866,
+        "sec_per_token": 1.078337025989717e-05
        }
       },
       "cold_round": {
-       "sec": 2.0348213390000183,
-       "share": 0.036201879056433336
+       "sec": 3.9216444210000105,
+       "share": 0.039869691685612316
       }
      },
      "bestfirst.fast": {
-      "tps_decode": 298.27779239026506,
-      "ttft": 0.021566695499991795,
-      "output_tokens": 2483,
-      "rounds": 241,
-      "decode_time": 8.324454798000033,
-      "mean_accept": 10.336099585062241,
+      "tps_decode": 198.6536807242233,
+      "ttft": 0.029941788624995525,
+      "output_tokens": 2305,
+      "rounds": 220,
+      "decode_time": 11.603107435999974,
+      "mean_accept": 10.513636363636364,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 1.1509329790001885,
-        "sec_per_token": 0.0004635251627064795,
-        "share": 0.13825926224942714
+        "sec": 1.4418111640002564,
+        "sec_per_token": 0.0006255146047723456,
+        "share": 0.12426077858478425
        },
        "candidate_build": {
-        "sec": 1.1686981229994302,
-        "sec_per_token": 0.0004706798723316271,
-        "share": 0.14039335324160956
+        "sec": 2.349061902000045,
+        "sec_per_token": 0.0010191157926247485,
+        "share": 0.20245110328909055
        },
        "candidate_pack": {
-        "sec": 0.05083843199994931,
-        "sec_per_token": 2.047460008052731e-05,
-        "share": 0.006107118512093229
+        "sec": 0.061368288999830156,
+        "sec_per_token": 2.6623986550902453e-05,
+        "share": 0.005288952923888991
        },
        "verify": {
-        "sec": 5.329991750000076,
-        "sec_per_token": 0.002146593536045137,
-        "share": 0.6402811810907565
+        "sec": 6.889834987000498,
+        "sec_per_token": 0.0029890824238613875,
+        "share": 0.5937922254881476
        },
        "walk_accept": {
-        "sec": 0.03559775800016496,
-        "sec_per_token": 1.4336592025841707e-05,
-        "share": 0.0042762870198679425
+        "sec": 0.047715750999842044,
+        "sec_per_token": 2.0700976572599586e-05,
+        "share": 0.0041123251907328245
        },
        "kv_update": {
-        "sec": 0.26143170199968324,
-        "sec_per_token": 0.0001052886435761914,
-        "share": 0.031405264169671834
+        "sec": 0.3233980050000582,
+        "sec_per_token": 0.0001403028221258387,
+        "share": 0.027871672031293857
        },
        "state_carry": {
-        "sec": 0.008613922000378693,
-        "sec_per_token": 3.4691590819084546e-06,
-        "share": 0.0010347731124022927
+        "sec": 0.010865478000468443,
+        "sec_per_token": 4.713873319075246e-06,
+        "share": 0.0009364282853020088
        },
        "unaccounted": {
-        "sec": 0.04282854900016275,
-        "sec_per_token": 1.7248710833734497e-05,
-        "share": 0.005144907389064374
+        "sec": 0.05250206399900037,
+        "sec_per_token": 2.2777468112364585e-05,
+        "share": 0.004524827878099852
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 0.21768845199979125,
-        "sec_per_token": 8.76715473217041e-05
+        "sec": 0.22137984500008656,
+        "sec_per_token": 9.60433167028575e-05
        },
        "candidate_build.expand": {
-        "sec": 0.8625651849999372,
-        "sec_per_token": 0.000347388314538839
+        "sec": 1.9731861439997829,
+        "sec_per_token": 0.0008560460494576065
        },
        "candidate_build.visibility": {
-        "sec": 0.011066784000448138,
-        "sec_per_token": 4.457021345327482e-06
+        "sec": 0.01914916799998423,
+        "sec_per_token": 8.307665075915066e-06
        }
       },
       "cold_round": {
-       "sec": 0.27552158299999974,
-       "share": 0.03309785321510717
+       "sec": 0.4265497959999749,
+       "share": 0.03676168632866013
       }
      }
     },
     "humaneval": {
      "bestfirst.ref": {
-      "tps_decode": 34.54938490769925,
-      "ttft": 0.02221060512501083,
-      "output_tokens": 3717,
-      "rounds": 420,
-      "decode_time": 107.585128069,
-      "mean_accept": 8.892857142857142,
+      "tps_decode": 20.17245913006602,
+      "ttft": 0.03322255262500562,
+      "output_tokens": 3751,
+      "rounds": 398,
+      "decode_time": 185.94659063700004,
+      "mean_accept": 9.452261306532664,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 2.0648849799994196,
-        "sec_per_token": 0.000555524611245472,
-        "share": 0.019193033619619805
+        "sec": 2.750382618000458,
+        "sec_per_token": 0.0007332398341776747,
+        "share": 0.01479125058748553
        },
        "candidate_build": {
-        "sec": 93.09338889100025,
-        "sec_per_token": 0.02504530236507943,
-        "share": 0.8652997915408397
+        "sec": 165.15806033400128,
+        "sec_per_token": 0.04403040798027227,
+        "share": 0.888201605462175
        },
        "candidate_pack": {
-        "sec": 0.16744087699873944,
-        "sec_per_token": 4.504731692190999e-05,
-        "share": 0.0015563570913941821
+        "sec": 0.17030260099852512,
+        "sec_per_token": 4.5401919754338874e-05,
+        "share": 0.000915868370670938
        },
        "verify": {
-        "sec": 9.49067717700052,
-        "sec_per_token": 0.0025533164317999785,
-        "share": 0.08821551219341069
+        "sec": 13.071919546000913,
+        "sec_per_token": 0.0034849159013598807,
+        "share": 0.07029932359189937
        },
        "walk_accept": {
-        "sec": 0.07735777699940627,
-        "sec_per_token": 2.0811885122250814e-05,
-        "share": 0.0007190378297434628
+        "sec": 0.10261086300096167,
+        "sec_per_token": 2.735560197306363e-05,
+        "share": 0.0005518297627799794
        },
        "kv_update": {
-        "sec": 0.44806753300036917,
-        "sec_per_token": 0.00012054547565250717,
-        "share": 0.004164772037200159
+        "sec": 0.6097904709995987,
+        "sec_per_token": 0.00016256744094897326,
+        "share": 0.003279385058422584
        },
        "state_carry": {
-        "sec": 0.016968240999290174,
-        "sec_per_token": 4.565036588455791e-06,
-        "share": 0.00015771920621228936
+        "sec": 0.021418546000063543,
+        "sec_per_token": 5.710089576129976e-06,
+        "share": 0.00011518654860349795
        },
        "unaccounted": {
-        "sec": 0.08620471500199756,
-        "sec_per_token": 2.3192013721279945e-05,
-        "share": 0.0008012698088411433
+        "sec": 0.10055480099828173,
+        "sec_per_token": 2.680746494222387e-05,
+        "share": 0.0005407724909276886
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 38.96913936099969,
-        "sec_per_token": 0.010484029959913826
+        "sec": 46.96681407999887,
+        "sec_per_token": 0.012521144782724305
        },
        "candidate_build.expand": {
-        "sec": 53.53130821099978,
-        "sec_per_token": 0.014401750931127194
+        "sec": 117.36836957900027,
+        "sec_per_token": 0.03128988791762204
        },
        "candidate_build.visibility": {
-        "sec": 0.0313512659994899,
-        "sec_per_token": 8.43456174320417e-06
+        "sec": 0.04628030200035482,
+        "sec_per_token": 1.2338123700441169e-05
        }
       },
       "cold_round": {
-       "sec": 2.1401378780000186,
-       "share": 0.01989250667273859
+       "sec": 3.9615508569999633,
+       "share": 0.021304778127035396
       }
      },
      "bestfirst.fast": {
-      "tps_decode": 273.20126099291934,
-      "ttft": 0.02008392625000255,
-      "output_tokens": 3739,
-      "rounds": 425,
-      "decode_time": 13.685881193999705,
-      "mean_accept": 8.823529411764707,
+      "tps_decode": 181.91876863467647,
+      "ttft": 0.030804855874997372,
+      "output_tokens": 3663,
+      "rounds": 390,
+      "decode_time": 20.13536056499987,
+      "mean_accept": 9.415384615384616,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 1.9032215070000689,
-        "sec_per_token": 0.0005090188571810829,
-        "share": 0.13906459365104656
+        "sec": 2.5583694269996613,
+        "sec_per_token": 0.0006984355520064595,
+        "share": 0.12705853559169566
        },
        "candidate_build": {
-        "sec": 1.9591344050022599,
-        "sec_per_token": 0.0005239728282969403,
-        "share": 0.1431500374167505
+        "sec": 4.058329735001337,
+        "sec_per_token": 0.0011079251255804905,
+        "share": 0.20155237458502212
        },
        "candidate_pack": {
-        "sec": 0.08329990799904863,
-        "sec_per_token": 2.2278659534380484e-05,
-        "share": 0.006086557878024673
+        "sec": 0.10703926799959618,
+        "sec_per_token": 2.922174938563914e-05,
+        "share": 0.005315984665586586
        },
        "verify": {
-        "sec": 8.901031644000625,
-        "sec_per_token": 0.0023805915068201727,
-        "share": 0.650380601572305
+        "sec": 12.223484769000152,
+        "sec_per_token": 0.0033370146789517205,
+        "share": 0.6070656013107372
        },
        "walk_accept": {
-        "sec": 0.05741527400033419,
-        "sec_per_token": 1.5355783364625352e-05,
-        "share": 0.00419521937874974
+        "sec": 0.0802867510010401,
+        "sec_per_token": 2.191830494158889e-05,
+        "share": 0.003987351045533195
        },
        "kv_update": {
-        "sec": 0.43770599999965043,
-        "sec_per_token": 0.00011706499063911485,
-        "share": 0.03198230306073047
+        "sec": 0.5847777800001381,
+        "sec_per_token": 0.00015964449358453128,
+        "share": 0.029042329692204442
        },
        "state_carry": {
-        "sec": 0.014110323001148117,
-        "sec_per_token": 3.7738226801679906e-06,
-        "share": 0.0010310131149855737
+        "sec": 0.018809690998807582,
+        "sec_per_token": 5.135050777725248e-06,
+        "share": 0.0009341621143603148
        },
        "unaccounted": {
-        "sec": 0.06694219999678808,
-        "sec_per_token": 1.790377106092219e-05,
-        "share": 0.00489133283037248
+        "sec": 0.08574055299908423,
+        "sec_per_token": 2.340719437594437e-05,
+        "share": 0.004258207978064324
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 0.36961805700002515,
-        "sec_per_token": 9.885478924846888e-05
+        "sec": 0.3847789469988925,
+        "sec_per_token": 0.00010504475757545523
        },
        "candidate_build.expand": {
-        "sec": 1.448097700000858,
-        "sec_per_token": 0.00038729545332999676
+        "sec": 3.409847618999322,
+        "sec_per_token": 0.0009308893308761458
        },
        "candidate_build.visibility": {
-        "sec": 0.01857056699907389,
-        "sec_per_token": 4.966720245807405e-06
+        "sec": 0.03337529799972572,
+        "sec_per_token": 9.111465465390586e-06
        }
       },
       "cold_round": {
-       "sec": 0.2630199329997822,
-       "share": 0.019218341097034946
+       "sec": 0.4185225910000554,
+       "share": 0.020785453016796178
       }
      }
     },
     "mt-bench": {
      "bestfirst.ref": {
-      "tps_decode": 19.49559251552078,
-      "ttft": 0.020334365125009413,
-      "output_tokens": 2218,
-      "rounds": 430,
-      "decode_time": 113.769304433,
-      "mean_accept": 5.183720930232558,
+      "tps_decode": 11.58084025343171,
+      "ttft": 0.03040886150002109,
+      "output_tokens": 2146,
+      "rounds": 392,
+      "decode_time": 185.30607046099988,
+      "mean_accept": 5.528061224489796,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 2.156875772001058,
-        "sec_per_token": 0.0009724417367002065,
-        "share": 0.018958327843792575
+        "sec": 2.644753865999519,
+        "sec_per_token": 0.0012324109347621244,
+        "share": 0.01427235416206261
        },
        "candidate_build": {
-        "sec": 98.66132448499957,
-        "sec_per_token": 0.04448211203110891,
-        "share": 0.8672051303882438
+        "sec": 165.11481937599922,
+        "sec_per_token": 0.07694073596272098,
+        "share": 0.8910383721657399
        },
        "candidate_pack": {
-        "sec": 0.17211121100217497,
-        "sec_per_token": 7.759748016328898e-05,
-        "share": 0.001512808853494689
+        "sec": 0.16398391799884848,
+        "sec_per_token": 7.641375489228727e-05,
+        "share": 0.0008849354885724646
        },
        "verify": {
-        "sec": 9.903302412001153,
-        "sec_per_token": 0.004464969527502774,
-        "share": 0.08704722650241144
+        "sec": 12.731032715999731,
+        "sec_per_token": 0.005932447677539483,
+        "share": 0.06870272886542671
        },
        "walk_accept": {
-        "sec": 0.08016987099904327,
-        "sec_per_token": 3.6145117673148454e-05,
-        "share": 0.0007046704855812509
+        "sec": 0.09387231700088705,
+        "sec_per_token": 4.374292497711419e-05,
+        "share": 0.0005065798263778074
        },
        "kv_update": {
-        "sec": 0.4562109350014225,
-        "sec_per_token": 0.00020568572362552863,
-        "share": 0.004009965054063332
+        "sec": 0.5881306270002824,
+        "sec_per_token": 0.0002740590060579135,
+        "share": 0.0031738335691709695
        },
        "state_carry": {
-        "sec": 0.017386065000778217,
-        "sec_per_token": 7.83862263335357e-06,
-        "share": 0.00015281859274279963
+        "sec": 0.020460394998281117,
+        "sec_per_token": 9.534200837968833e-06,
+        "share": 0.00011041405684865181
        },
        "unaccounted": {
-        "sec": 0.08887904799496482,
-        "sec_per_token": 4.0071707842635176e-05,
-        "share": 0.0007812216875010137
+        "sec": 0.09652684600303019,
+        "sec_per_token": 4.497989096133746e-05,
+        "share": 0.0005209049318400259
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 41.125251210998954,
-        "sec_per_token": 0.018541592069882304
+        "sec": 43.659856483998624,
+        "sec_per_token": 0.020344760710157794
        },
        "candidate_build.expand": {
-        "sec": 56.92662188900067,
-        "sec_per_token": 0.025665744765104
+        "sec": 120.63653038199698,
+        "sec_per_token": 0.056214599432431026
        },
        "candidate_build.visibility": {
-        "sec": 0.032632081003271196,
-        "sec_per_token": 1.4712389992457708e-05
+        "sec": 0.044449509000287435,
+        "sec_per_token": 2.0712725536014647e-05
        }
       },
       "cold_round": {
-       "sec": 2.233044633999839,
-       "share": 0.019627830592169115
+       "sec": 3.852490400000079,
+       "share": 0.02078987693396092
       }
      },
      "bestfirst.fast": {
-      "tps_decode": 157.85500468492899,
-      "ttft": 0.019848495499985574,
-      "output_tokens": 2184,
-      "rounds": 423,
-      "decode_time": 13.83548151900004,
-      "mean_accept": 5.198581560283688,
+      "tps_decode": 104.60708802287854,
+      "ttft": 0.029170450625002786,
+      "output_tokens": 2172,
+      "rounds": 414,
+      "decode_time": 20.763411362000284,
+      "mean_accept": 5.285024154589372,
       "budget_invariant": false,
       "phases": {
        "draft_forward": {
-        "sec": 1.9338351889980459,
-        "sec_per_token": 0.0008854556726181529,
-        "share": 0.13977360934943547
+        "sec": 2.6146129989982683,
+        "sec_per_token": 0.001203781307089442,
+        "share": 0.12592405715100105
        },
        "candidate_build": {
-        "sec": 1.9427516490013659,
-        "sec_per_token": 0.0008895383008248012,
-        "share": 0.1404180726441228
+        "sec": 4.16370418900101,
+        "sec_per_token": 0.0019169908789139086,
+        "share": 0.20053083360960253
        },
        "candidate_pack": {
-        "sec": 0.08358073599924865,
-        "sec_per_token": 3.826956776522374e-05,
-        "share": 0.006041042798869601
+        "sec": 0.10915236500250103,
+        "sec_per_token": 5.0254311695442464e-05,
+        "share": 0.005256957207054324
        },
        "verify": {
-        "sec": 9.040408339999999,
-        "sec_per_token": 0.004139381108058607,
-        "share": 0.653422024205298
+        "sec": 12.66968018099874,
+        "sec_per_token": 0.005833186087015994,
+        "share": 0.6101926104583125
        },
        "walk_accept": {
-        "sec": 0.05747549300190258,
-        "sec_per_token": 2.631661767486382e-05,
-        "share": 0.004154209806357113
+        "sec": 0.07813436699825616,
+        "sec_per_token": 3.597346546881038e-05,
+        "share": 0.0037630794687838294
        },
        "kv_update": {
-        "sec": 0.43370818399773725,
-        "sec_per_token": 0.00019858433333229728,
-        "share": 0.031347530868523286
+        "sec": 0.6032635470016885,
+        "sec_per_token": 0.0002777456477908326,
+        "share": 0.02905416342642705
        },
        "state_carry": {
-        "sec": 0.013835427999651984,
-        "sec_per_token": 6.3349029302435825e-06,
-        "share": 0.0009999961317321711
+        "sec": 0.018840073002024837,
+        "sec_per_token": 8.674066759679943e-06,
+        "share": 0.0009073688650461647
        },
        "unaccounted": {
-        "sec": 0.06741740200186541,
-        "sec_per_token": 3.086877381037793e-05,
-        "share": 0.004872790434455223
+        "sec": 0.08552395299773252,
+        "sec_per_token": 3.937566896764849e-05,
+        "share": 0.0041189740696585325
        }
       },
       "subphases": {
        "candidate_build.prep": {
-        "sec": 0.35459514599915565,
-        "sec_per_token": 0.00016236041483477822
+        "sec": 0.37762275300144665,
+        "sec_per_token": 0.00017385946270784836
        },
        "candidate_build.expand": {
-        "sec": 1.4547941570012881,
-        "sec_per_token": 0.0006661145407515055
+        "sec": 3.5347772450026014,
+        "sec_per_token": 0.0016274296708115108
        },
        "candidate_build.visibility": {
-        "sec": 0.018632348999972237,
-        "sec_per_token": 8.531295329657617e-06
+        "sec": 0.03428862100031438,
+        "sec_per_token": 1.5786657919113433e-05
        }
       },
       "cold_round": {
-       "sec": 0.2624690980002242,
-       "share": 0.018970723761206267
+       "sec": 0.42049968800006354,
+       "share": 0.020251955744114
       }
      }
     }
@@ -633,40 +570,40 @@
   }
  },
  "timing": {
-  "64": {
+  "128": {
    "bestfirst.ref": {
-    "tps_clean": 30.13115344372351,
-    "tps_instrumented": 30.180638983024654,
-    "instrumentation_tax": -0.0016423380337420301,
+    "tps_clean": 17.499010425977527,
+    "tps_instrumented": 17.554835257940365,
+    "instrumentation_tax": -0.0031901707927417533,
     "dominant_phase": "candidate_build",
-    "dominant_share": 0.8814632868978971,
+    "dominant_share": 0.9072221243207984,
     "per_dataset": {
      "gsm8k": {
-      "tps_clean": 42.913120375434644
+      "tps_clean": 23.61787418808619
      },
      "humaneval": {
-      "tps_clean": 34.32866193651259
+      "tps_clean": 20.18704050176136
      },
      "mt-bench": {
-      "tps_clean": 19.656958834847345
+      "tps_clean": 11.5422148838942
      }
     }
    },
    "bestfirst.fast": {
-    "tps_clean": 237.84981274991526,
-    "tps_instrumented": 234.50434621613815,
-    "instrumentation_tax": 0.014065457925311331,
+    "tps_clean": 155.37976446428516,
+    "tps_instrumented": 155.04206894613637,
+    "instrumentation_tax": 0.002173355837634894,
     "dominant_phase": "verify",
-    "dominant_share": 0.6640479373277127,
+    "dominant_share": 0.6203218307351207,
     "per_dataset": {
      "gsm8k": {
-      "tps_clean": 304.00871712563105
+      "tps_clean": 198.084206196064
      },
      "humaneval": {
-      "tps_clean": 275.33109844594225
+      "tps_clean": 182.35313866640521
      },
      "mt-bench": {
-      "tps_clean": 160.65808210409284
+      "tps_clean": 105.1107887370758
      }
     }
    }

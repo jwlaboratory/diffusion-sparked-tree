@@ -152,7 +152,9 @@ def merge(tag: str, smoke: bool) -> dict:
     tree_names = [m["name"] for m in methods if m["verify"] in ("tree", "ddtree")]
     chain_names = [m["name"] for m in methods if m["verify"] not in ("tree", "ddtree")]
     budgets = base["tree_budgets"]
-    passes = base["passes"]
+    # Read BOTH passes if the units have them (the run may be both-pass even when the
+    # config later drops instrumented). Timing is built on the clean pass alone.
+    passes = ["clean", "instrumented"]
 
     # ---- scan this run's per-unit cache files (across its shard fingerprint dirs) --
     # filename: both__b{blabel}__{dataset}__n{n}.json ; contents {pass:{method:[recs]}}
@@ -209,7 +211,7 @@ def merge(tag: str, smoke: bool) -> dict:
                         mismatches.append(f"b{blabel}/{ds}/{name}")
 
     timing = {}
-    if "clean" in results and "instrumented" in results:
+    if "clean" in results:   # timing needs the clean pass; instrumented is optional
         timing = build_timing_rollup(results, budgets, method_names, datasets)
 
     summary = {
