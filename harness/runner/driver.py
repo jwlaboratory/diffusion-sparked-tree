@@ -192,11 +192,13 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
             print(f"[resume] {unit} loaded from cache", flush=True)
             return json.load(open(cpath))
 
-        records = {p: {m.name: [] for m in unit_methods} for p in ("clean", "instrumented")}
+        records = {p: {m.name: [] for m in unit_methods} for p in passes}
         rows = get_rows(dataset_name, max_samples)
         for i, row in enumerate(rows):
             input_ids = encode(row["turns"][0])
-            order = ("clean", "instrumented") if i % 2 == 0 else ("instrumented", "clean")
+            # Interleave passes per sample, alternating order (kills warm-state drift).
+            # With a single pass (e.g. clean-only) this is just [pass] every sample.
+            order = passes if i % 2 == 0 else passes[::-1]
             for m in unit_methods:
                 fn = fns[(m.name, budget)]
                 if i == 0 and cfg.get("discard_first_sample"):
@@ -215,21 +217,21 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
         return records
 
     # pass -> budget-label -> dataset -> {method: [records]}
-    raw: dict[str, dict[str, dict[str, dict]]] = {p: {} for p in ("clean", "instrumented")}
+    raw: dict[str, dict[str, dict[str, dict]]] = {p: {} for p in passes}
     for dataset_name, max_samples in cfg["tasks"]:
         if chain_methods:
             both = run_unit(dataset_name, max_samples, None, chain_methods)
-            for p in ("clean", "instrumented"):
+            for p in passes:
                 raw[p].setdefault("na", {})[dataset_name] = both[p]
         for budget in cfg["tree_budgets"]:
             both = run_unit(dataset_name, max_samples, budget, tree_methods)
-            for p in ("clean", "instrumented"):
+            for p in passes:
                 raw[p].setdefault(str(budget), {})[dataset_name] = both[p]
 
     # ---- assembly ------------------------------------------------------------- #
     dataset_names = [d for d, _ in cfg["tasks"]]
     results: dict[str, dict] = {}
-    for pass_name in ("clean", "instrumented"):  # both always run (interleaved)
+    for pass_name in passes:
         instrumented = pass_name == "instrumented"
         results[pass_name] = {}
         for budget in cfg["tree_budgets"]:

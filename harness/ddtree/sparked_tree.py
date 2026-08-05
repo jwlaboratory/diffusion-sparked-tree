@@ -752,6 +752,7 @@ def sparked_tree_generate(
     tree_mode: str = "best-first",
     beam_schedule: dict | None = None,
     beam_candidates: int = 2048,
+    max_fanout: int = 0,
     probe_markov_head=None,
     save_tree_traces: bool = False,
 ) -> SimpleNamespace:
@@ -937,6 +938,7 @@ def sparked_tree_generate(
                 int(root_token[0, 0]),
                 tree_budget,
                 beam_candidates,
+                max_fanout,
             )
         else:
             node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree(

@@ -22,6 +22,7 @@ from dflash import dflash_generate
 from dspark import dspark_generate
 from ddtree import ddtree_generate
 from sparked_tree import sparked_tree_generate
+from autoregressive import autoregressive_generate
 
 from backbones import Backbone
 
@@ -68,6 +69,17 @@ def build_method_callable(
             raise ValueError(f"method {method.name!r}: unknown corrector {method.corrector!r}")
         corrector_head = correctors[method.corrector]
 
+    if method.verify == "autoregressive":
+        # Plain target decode -- the 1x speedup baseline. No drafter, so `model`
+        # (the backbone) is unused; AR attaches to an already-loaded backbone only
+        # to satisfy the method schema. corrector must be None (nothing to correct).
+        if method.corrector is not None:
+            raise ValueError(f"{method.name}: autoregressive has no corrector slot")
+        return lambda ids: autoregressive_generate(
+            target=target, input_ids=ids, max_new_tokens=cfg["max_new_tokens"],
+            stop_token_ids=[eos_id], temperature=cfg["temperature"],
+        )
+
     if method.verify == "chain":
         if bb.kind == "dflash":
             if method.corrector is not None:
@@ -76,7 +88,14 @@ def build_method_callable(
                 model=model, target=target, input_ids=ids,
                 mask_token_id=model.mask_token_id, block_size=bs, **common,
             )
-        # dspark chain applies its own markov head intrinsically; corrector ignored.
+        # DSpark's markov head is INTRINSIC to the drafter: dspark_generate drafts
+        # via model.sample_draft_tokens (a serial markov sweep), so the head is
+        # ALWAYS on for a dspark chain -- that is what DSpark *is*. The `corrector`
+        # slot is a verify="tree" concept (a pluggable head handed to the tree
+        # builder); on a chain it is ignored, NOT a way to toggle the head. So
+        # corrector=None on a dspark chain still runs WITH the markov head. (The
+        # markov-off controls in exp1/exp2 use a separate backbone-level switch,
+        # not this slot.)
         return lambda ids: dspark_generate(
             model=model, target=target, input_ids=ids, block_size=bs,
             confidence_threshold=cfg["confidence_threshold"], **common,

@@ -31,6 +31,14 @@ _COMMON_TAIL = ("verify", "walk_accept", "kv_update", "state_carry")
 
 def canonical_phases(verify: str, kind: str, st: dict) -> tuple[dict, dict]:
     """Map one summed native stage_times dict -> ({phase: sec|None}, {subphase: sec})."""
+    if verify == "autoregressive":
+        # AR has no drafter/tree/spec tail: the only real phase is the per-token
+        # target forward (bucketed as "verify"); everything else is structurally
+        # absent -> None (never 0.0, per the module rule).
+        phases = {"draft_forward": None, "candidate_build": None, "candidate_pack": None,
+                  "verify": st.get("verify", 0.0), "walk_accept": None,
+                  "kv_update": None, "state_carry": None}
+        return phases, {}
     tail = {k: st[k] for k in _COMMON_TAIL}
     if verify == "chain" and kind == "dflash":
         phases = {"draft_forward": st["draft"], "candidate_build": st["candidate_build"],
