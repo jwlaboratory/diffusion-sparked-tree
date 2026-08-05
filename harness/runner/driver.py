@@ -113,6 +113,10 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
     torch.cuda.manual_seed_all(cfg["seed"])
     device = torch.device("cuda:0")
 
+    # Which passes to run (interleaved per sample). Default: both. Kept as a list so
+    # a caller could run clean-only, but the default preserves the original behavior.
+    passes = list(cfg.get("passes") or ["clean", "instrumented"])
+
     # Compile the inline C++ KV-compaction extension OUTSIDE the timed region, and
     # record which path is live -- it changes kv_update.
     maybe_enable_cpp_compact(True)
@@ -216,17 +220,28 @@ def run(cfg: dict, on_checkpoint=None) -> dict:
             print(f"[checkpoint] {unit} saved", flush=True)
         return records
 
-    # pass -> budget-label -> dataset -> {method: [records]}
-    raw: dict[str, dict[str, dict[str, dict]]] = {p: {} for p in passes}
+    # Flat unit list. Every unit is independent and checkpointed, so parallel
+    # containers can each take a rotated slice (cfg["shard_offset"]) and fill the
+    # SHARED cache dir; any container that iterates the full list assembles a
+    # complete summary from cache (run_unit loads a done unit instead of recomputing).
+    # shard_offset is intentionally NOT in fingerprint(), so all shards share cache.
+    unit_specs = []
     for dataset_name, max_samples in cfg["tasks"]:
         if chain_methods:
-            both = run_unit(dataset_name, max_samples, None, chain_methods)
-            for p in passes:
-                raw[p].setdefault("na", {})[dataset_name] = both[p]
+            unit_specs.append((dataset_name, max_samples, None, chain_methods))
         for budget in cfg["tree_budgets"]:
-            both = run_unit(dataset_name, max_samples, budget, tree_methods)
-            for p in passes:
-                raw[p].setdefault(str(budget), {})[dataset_name] = both[p]
+            unit_specs.append((dataset_name, max_samples, budget, tree_methods))
+    if unit_specs:
+        off = int(cfg.get("shard_offset", 0)) % len(unit_specs)
+        unit_specs = unit_specs[off:] + unit_specs[:off]
+
+    # pass -> budget-label -> dataset -> {method: [records]}
+    raw: dict[str, dict[str, dict[str, dict]]] = {p: {} for p in passes}
+    for dataset_name, max_samples, budget, umethods in unit_specs:
+        both = run_unit(dataset_name, max_samples, budget, umethods)
+        blabel = "na" if budget is None else str(budget)
+        for p in passes:
+            raw[p].setdefault(blabel, {})[dataset_name] = both[p]
 
     # ---- assembly ------------------------------------------------------------- #
     dataset_names = [d for d, _ in cfg["tasks"]]

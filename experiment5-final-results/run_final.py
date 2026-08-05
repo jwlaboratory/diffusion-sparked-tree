@@ -24,11 +24,17 @@ GPU = "H100"
 CPU = 8
 
 # --- SparklingTree (ours): fill C / K / B from the exp4 csweep winner ---------
-OUR_TREE_MODE = "best-first-precompute"   # the builder that shipped from exp4/2
-C             = 512        # candidate pool per depth        (beam_candidates)  <-- set from csweep
-K             = 0          # max fanout per node, 0 = budget  (max_fanout)       <-- set from csweep
-# B: tree node budget(s). Paper sweeps {16,32,64,128,256,512,1024}, block size 16.
-BUDGETS       = [16, 32, 64, 128, 256, 512, 1024]   # applies to DDTree + SparklingTree
+OUR_TREE_MODE = "best-first-precompute"   # csweep winner
+C             = 256        # candidate pool per depth        (beam_candidates)  <- csweep
+K             = 0          # max fanout per node, 0 = budget  (max_fanout)       <- default (not swept)
+# Tree node budgets, per method. DDTree at {64,256}; SparklingTree at its best
+# budget (leave as a list; narrow to the csweep winner when known). Both tree
+# methods actually run at the UNION of these (BUDGETS) -- so if SparklingTree's
+# budget falls outside {64,256}, DDTree will also run there (harmless extra data;
+# the headline just reads DDTree@{64,256} and SparklingTree@its budget).
+DDTREE_BUDGETS    = [64, 256]
+SPARKLING_BUDGETS = [64]         # csweep winner; SparklingTree headline reads @64
+BUDGETS           = sorted(set(DDTREE_BUDGETS) | set(SPARKLING_BUDGETS))  # = [64, 256]
 
 # --- which methods to include in the comparison ------------------------------
 INCLUDE_AUTOREGRESSIVE = True   # plain target decode -- the 1× speedup baseline

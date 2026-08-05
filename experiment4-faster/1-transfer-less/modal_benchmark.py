@@ -43,7 +43,7 @@ BACKBONES = [
 ]
 
 CORRECTOR = "dspark_b16_markov"
-BEAM_CANDIDATES = 2048  # candidate-union top-C restriction for the fast builder
+BEAM_CANDIDATES = 256  # optimal top-C (=K) shortlist; knee of the C-sweep
 
 
 METHODS = [
@@ -61,7 +61,7 @@ TASKS = [
     ["mt-bench", 4],
 ]
 
-TREE_BUDGETS = [64, 256]
+TREE_BUDGETS = [64]  # optimal budget for this DSpark-b16/H100 setup
 TEMPERATURE = 0.0
 MAX_NEW_TOKENS = 512
 SEED = 0

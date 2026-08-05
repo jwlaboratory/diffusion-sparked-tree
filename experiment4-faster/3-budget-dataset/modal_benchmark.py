@@ -203,7 +203,7 @@ def print_sweep_table(summary: dict) -> None:
 
 
 @app.local_entrypoint()
-def main(smoke: bool = False, spawn: bool = False):
+def main(smoke: bool = False, spawn: bool = False, parallel: int = 0):
     cfg = build_run_config()
     if smoke:
         # Exercise the new-dataset loaders (livecodebench multi-file download is the
@@ -214,8 +214,18 @@ def main(smoke: bool = False, spawn: bool = False):
         cfg["warmup_tokens"] = 32
 
     if spawn:
-        call = run_experiment.spawn(cfg)
-        print(f"spawned: {call.object_id}")
+        # parallel>1: fan out N containers over the SHARED checkpoint dir, each
+        # starting on a rotated slice of the unit grid (shard_offset, excluded from
+        # fingerprint). They resume already-done units; any that finishes assembles
+        # the full summary from cache. ~N x faster wall-clock.
+        n_units = len(cfg["tasks"]) * len(cfg["tree_budgets"])
+        n = max(1, int(parallel))
+        offsets = [i * n_units // n for i in range(n)] if n > 1 else [0]
+        ids = []
+        for off in offsets:
+            call = run_experiment.spawn({**cfg, "shard_offset": off})
+            ids.append(call.object_id)
+        print(f"spawned {len(ids)} shard(s) offsets={offsets}: {ids}")
         print("progress:  modal volume ls ddtree-results dsbudget/cache")
         print("fetch:     modal volume get ddtree-results dsbudget/summary.json")
         return
