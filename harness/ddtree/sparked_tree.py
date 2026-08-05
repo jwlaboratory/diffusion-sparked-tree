@@ -251,6 +251,348 @@ def build_sparked_tree(
     return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
 
 
+def build_sparked_tree_fast(
+    base_logits: torch.Tensor,
+    markov_head,
+    root_token_id: int,
+    budget: int,
+    candidates: int = 2048,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor, dict[str, float]]:
+    """Best-first markov tree, identical in shape to build_sparked_tree but with the
+    candidate-union restriction the beam builder uses -- ported into the heap loop.
+
+    build_sparked_tree pays two costs that this function collapses:
+      * `.prep`  (tree_build_copy): it ships the STATIC full-vocab markov matrices
+        W1/W2 ([vocab, rank] each, ~311 MB) GPU->CPU every round. Here we top-k on
+        GPU first and gather only the ~U active columns/rows once.
+      * `.expand` (tree_build_heap): every popped node ran a full-vocab
+        log_softmax + top-k + a full-vocab bias. Here each pop works on a length-U
+        vector instead of the full 151,936 vocab.
+
+    The restriction: only the union of the per-depth top-`candidates` base tokens
+    (plus the root token, needed as a prev-token) can ever become a node -- the
+    additive bias is small relative to the base-logit spread, so a promoted token
+    almost always already sits in the top-C. `candidates=0` (or >= vocab) disables
+    the restriction, in which case the active set is the full vocab in order and
+    this is PROVABLY identical to build_sparked_tree (local index == global id, so
+    top-k tie-breaking, log_softmax, and bias all coincide byte-for-byte).
+    """
+    build_subtimes = empty_stage_times(DDTREE_TREE_BUILD_STAGE_ORDER)
+
+    if budget <= 0 or base_logits.shape[0] == 0:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
+            [-1],
+            [dict()],
+            visibility,
+            build_subtimes,
+        )
+
+    depth_limit = int(base_logits.shape[0])
+
+    # Copy the ACTIVE slice to CPU once. On GPU: top-k per depth, take the union,
+    # add the root token (it conditions depth 1, so its W1 row must be present),
+    # then gather only those columns of base_logits and rows of W1/W2. This is the
+    # only host transfer, and it ships ~U columns instead of the full vocab AND the
+    # gathered weight rows instead of the full ~311 MB of static matrices.
+    copy_start = cuda_time()
+    logits = base_logits.float()
+    vocab_size = int(logits.shape[-1])
+    if candidates and int(candidates) < vocab_size:
+        topk_idx = torch.topk(logits, k=min(int(candidates), vocab_size), dim=-1).indices.reshape(-1)
+        root_t = torch.tensor([int(root_token_id)], dtype=topk_idx.dtype, device=logits.device)
+        cand_ids = torch.unique(torch.cat([topk_idx, root_t]))
+    else:
+        # Full vocab, in order -> local index == global token id (equivalence gate).
+        cand_ids = torch.arange(vocab_size, device=logits.device)
+    base_active = logits.index_select(1, cand_ids).to(device="cpu")  # [depth_limit, U]
+    w1_active = w2_active = None
+    if markov_head is not None:
+        markov_w1 = markov_head.markov_w1.weight.detach().float()  # [vocab, rank]
+        markov_w2 = markov_head.markov_w2.weight.detach().float()  # [vocab, rank]
+        w1_active = markov_w1.index_select(0, cand_ids).to(device="cpu")  # [U, rank]
+        w2_active = markov_w2.index_select(0, cand_ids).to(device="cpu")  # [U, rank]
+    cand_ids_cpu = cand_ids.to(device="cpu")
+    build_subtimes["tree_build_copy"] = cuda_time() - copy_start
+
+    active_vocab = int(base_active.shape[-1])
+    topk = min(budget, active_vocab)
+    # token_id -> local index within cand_ids. Prev tokens are the root plus tree
+    # nodes; the root was added to cand_ids above and every node is drawn from the
+    # active set, so every prev-token lookup is guaranteed present (asserted below).
+    cand_list = cand_ids_cpu.tolist()
+    local_of = {int(t): i for i, t in enumerate(cand_list)}
+
+    def conditioned_topk(parent_depth: int, prev_token_id: int):
+        """Top-k (GLOBAL token_ids, log_probs) for a node's children, computed
+        purely on the length-U active arrays. Identical math to build_sparked_tree
+        restricted to the active columns: base_active[depth] + w2_active @
+        w1_active[local(prev)], log_softmax + top-k over U, local ids mapped back to
+        global via cand_ids."""
+        prev_local = local_of.get(int(prev_token_id))
+        assert prev_local is not None, f"prev token {prev_token_id} not in active set"
+        logits_row = base_active[parent_depth]
+        if markov_head is not None:
+            bias = w2_active @ w1_active[prev_local]  # [U]
+            logits_row = logits_row + bias
+        log_probs = torch.log_softmax(logits_row, dim=-1)
+        top_lp, top_local = torch.topk(log_probs, k=topk)
+        top_ids = cand_ids_cpu.index_select(0, top_local)
+        return top_ids.tolist(), top_lp.tolist()
+
+    heap_start = time.perf_counter()
+
+    # Per-node conditioned distributions, keyed by node index (0 == root/anchor).
+    dist_tokens: dict[int, list[int]] = {}
+    dist_logprobs: dict[int, list[float]] = {}
+    root_tokens, root_logprobs = conditioned_topk(0, int(root_token_id))
+    dist_tokens[0] = root_tokens
+    dist_logprobs[0] = root_logprobs
+
+    node_token_ids_np = np.empty(budget, dtype=np.int64)
+    node_depths_np = np.empty(budget, dtype=np.int64)
+    parents_np = np.empty(budget + 1, dtype=np.int32)
+    parents_np[0] = -1
+    child_maps: list[dict[int, int]] = [dict()]
+    node_count = 0
+
+    # Heap entry: (-logw, parent_index, depth, rank, logw). A node's token is the
+    # rank-th entry of its parent's conditioned distribution.
+    first_logw = float(root_logprobs[0])
+    heap: list[tuple[float, int, int, int, float]] = [(-first_logw, 0, 1, 0, first_logw)]
+
+    while heap and node_count < budget:
+        _, parent_index, depth, rank, logw = heapq.heappop(heap)
+
+        token_id = int(dist_tokens[parent_index][rank])
+        current_index = node_count + 1
+        node_token_ids_np[node_count] = token_id
+        node_depths_np[node_count] = depth
+        parents_np[current_index] = parent_index
+        child_maps.append(dict())
+        child_maps[parent_index][token_id] = current_index
+        node_count += 1
+
+        # Sibling: the next-best child of the SAME parent, so it reuses the parent's
+        # already-computed distribution (no rerun).
+        parent_logprobs = dist_logprobs[parent_index]
+        if rank + 1 < len(parent_logprobs):
+            sibling_logw = logw - parent_logprobs[rank] + parent_logprobs[rank + 1]
+            heapq.heappush(heap, (-sibling_logw, parent_index, depth, rank + 1, sibling_logw))
+
+        # Child: rerun the markov head conditioned on THIS node's token to get its
+        # children's distribution, then push its best child.
+        if depth < depth_limit:
+            child_tokens, child_logprobs = conditioned_topk(depth, token_id)
+            dist_tokens[current_index] = child_tokens
+            dist_logprobs[current_index] = child_logprobs
+            child_logw = logw + float(child_logprobs[0])
+            heapq.heappush(heap, (-child_logw, current_index, depth + 1, 0, child_logw))
+
+    build_subtimes["tree_build_heap"] = time.perf_counter() - heap_start
+
+    visibility_start = time.perf_counter()
+    current_length = 1 + node_count
+    visibility_np = np.zeros((current_length, current_length), dtype=np.bool_)
+    visibility_np[0, 0] = True
+    for index in range(1, current_length):
+        parent_index = int(parents_np[index])
+        visibility_np[index, :index] = visibility_np[parent_index, :index]
+        visibility_np[index, index] = True
+    build_subtimes["tree_build_visibility"] = time.perf_counter() - visibility_start
+
+    node_token_ids = torch.from_numpy(node_token_ids_np[:node_count])
+    node_depths = torch.from_numpy(node_depths_np[:node_count])
+    visibility = torch.from_numpy(visibility_np)
+    parents = parents_np[:current_length].tolist()
+
+    return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
+
+
+def _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root):
+    """Every branch-conditional transition best-first could ever ask for, at once.
+
+    A node at depth d always holds an element of the depth d-1 candidate set -- the
+    builder has nothing else to select from -- so the complete set of transitions is
+    a finite [L-1, C, C] tensor that depends on the candidate sets alone, not on
+    which nodes get expanded. The logsumexp normaliser is a function of
+    (depth, parent slot) only, so it folds into the same precompute.
+
+    Returns (root_logp [C], table_logp [L-1, C, C]), both log-normalised over the
+    candidate set exactly as the per-node builder normalises over its active set.
+    """
+    root = logits_cand[0] + (w1_root.float() @ w2_cand[0].T).reshape(-1)
+    root_logp = root - torch.logsumexp(root, dim=-1)
+
+    # [L-1, C, R] @ [L-1, R, C] -> [L-1, C, C], plus the per-depth base logits.
+    table = torch.baddbmm(logits_cand[1:].unsqueeze(1), w1_cand[:-1], w2_cand[1:].transpose(1, 2))
+    table_logp = table - torch.logsumexp(table, dim=-1, keepdim=True)
+    return root_logp, table_logp
+
+
+def build_sparked_tree_precompute(
+    base_logits: torch.Tensor,
+    markov_head,
+    root_token_id: int,
+    budget: int,
+    candidates: int = 512,
+    max_fanout: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[dict[int, int]], torch.Tensor, dict[str, float]]:
+    """Best-first markov tree at ONE sync per round -- batched *before* the walk.
+
+    Same strict best-first pop order as build_sparked_tree / build_sparked_tree_fast
+    (heap, sibling-reuse, adaptive allocation), so the tree it builds matches those
+    at the same candidate set up to float32 reduction-order epsilon. The difference
+    from build_sparked_tree_fast is purely WHERE the arithmetic runs:
+
+      * fast: the transition for each popped node is a per-pop CPU matmul
+        (`w2_active @ w1_active[prev]`), a *serial* loop ~linear in budget. That is
+        the `.expand` / tree_build_heap cost that stays dominant at large budgets.
+      * precompute: a node at depth d always holds an element of the depth d-1
+        candidate set, so the whole [L-1, C, C] transition stack is one batched GPU
+        matmul with no dependence on the walk. Resolve it, take the per-row top-k
+        once, ship it to CPU in ONE transfer -- then the heap walk is pure CPU array
+        indexing (no matmul, no cache miss possible).
+
+    The cost is O(L C^2 R): transitions for all C possible parents when at most
+    `budget` are used. Quadratic in C, so this builder wants C in the hundreds
+    (default 512) rather than the fast builder's 2048.
+
+    Timing buckets (harness contract): the GPU precompute + top-k + single transfer
+    land in `tree_build_copy` (fast's `.prep` bucket -- this is where the batched
+    matmul is); the CPU heap walk lands in `tree_build_heap` (fast's `.expand`
+    bucket, now trivial). So the two buckets isolate the mechanism head-to-head.
+
+    max_fanout bounds how many siblings ONE node may contribute (= transferred slice
+    width). 0 = the safe bound (budget). Uses per-depth top-C candidates rather than
+    a deduped union, because the table needs a fixed [L, C] shape and per-depth is
+    slightly tighter anyway.
+    """
+    build_subtimes = empty_stage_times(DDTREE_TREE_BUILD_STAGE_ORDER)
+
+    if budget <= 0 or base_logits.shape[0] == 0:
+        visibility = torch.zeros((1, 1), dtype=torch.bool)
+        visibility[0, 0] = True
+        return (
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
+            [-1],
+            [dict()],
+            visibility,
+            build_subtimes,
+        )
+
+    depth_limit, vocab_size = base_logits.shape
+
+    # --- GPU precompute + ONE transfer (tree_build_copy) --------------------------
+    copy_start = cuda_time()
+    logits = base_logits.float()
+    device = logits.device
+    candidate_count = int(min(candidates or vocab_size, vocab_size))
+    topk = min(int(max_fanout) or budget, budget, candidate_count)
+
+    logits_cand, cand_ids = torch.topk(logits, k=candidate_count, dim=-1)   # [L, C]
+    flat_ids = cand_ids.reshape(-1)
+    if markov_head is not None:
+        w1 = markov_head.markov_w1.weight.detach().float()   # [vocab, rank]
+        w2 = markov_head.markov_w2.weight.detach().float()   # [vocab, rank]
+        w1_cand = w1.index_select(0, flat_ids).view(depth_limit, candidate_count, -1)
+        w2_cand = w2.index_select(0, flat_ids).view(depth_limit, candidate_count, -1)
+        w1_root = w1.index_select(0, torch.tensor([int(root_token_id)], device=device))
+        root_logp, table_logp = _beam_transition_tables(logits_cand, w1_cand, w2_cand, w1_root)
+    else:
+        # No corrector: every parent at a depth shares that depth's base distribution.
+        base_logp = logits_cand - torch.logsumexp(logits_cand, dim=-1, keepdim=True)   # [L, C]
+        root_logp = base_logp[0]                                                       # [C]
+        table_logp = base_logp[1:].unsqueeze(1).expand(-1, candidate_count, -1)        # [L-1, C, C]
+
+    root_vals, root_slots = torch.topk(root_logp, k=topk, dim=-1)          # [k]
+    table_vals, table_slots = torch.topk(table_logp, k=topk, dim=-1)       # [L-1, C, k]
+
+    # ONE transfer for every table the walk can reach. Slots / token ids ride
+    # through float32 exactly (vocab << 2^24), the same pack trick as elsewhere.
+    flat = torch.cat([
+        root_vals, table_vals.reshape(-1),
+        root_slots.float(), table_slots.reshape(-1).float(),
+        flat_ids.float(),
+    ]).cpu().numpy()
+    build_subtimes["tree_build_copy"] = cuda_time() - copy_start
+
+    table_count = 1 + (depth_limit - 1) * candidate_count
+    span = table_count * topk
+    vals = flat[:span].reshape(table_count, topk)
+    slots = flat[span:2 * span].reshape(table_count, topk).astype(np.int64)
+    cand = flat[2 * span:].reshape(depth_limit, candidate_count).astype(np.int64)
+
+    # Row of the children table for a node at `depth` holding candidate `slot`.
+    def child_row(depth, slot):
+        return 1 + (depth - 1) * candidate_count + slot
+
+    # --- Pure-CPU best-first heap walk (tree_build_heap) --------------------------
+    heap_start = time.perf_counter()
+    node_token_ids_np = np.empty(budget, dtype=np.int64)
+    node_depths_np = np.empty(budget, dtype=np.int64)
+    parents_np = np.empty(budget + 1, dtype=np.int32)
+    parents_np[0] = -1
+    child_maps: list[dict[int, int]] = [dict()]
+    node_rows = np.zeros(budget + 1, dtype=np.int64)   # node 0 is the root -> row 0
+    node_count = 0
+    tiebreak = 0
+
+    first_logw = float(vals[0, 0])
+    heap: list[tuple[float, int, int, int, int, float]] = [(-first_logw, tiebreak, 0, 1, 0, first_logw)]
+
+    while heap and node_count < budget:
+        _, _, parent_index, depth, rank, logw = heapq.heappop(heap)
+        parent_row = int(node_rows[parent_index])
+        slot = int(slots[parent_row, rank])
+        token_id = int(cand[depth - 1, slot])
+
+        current_index = node_count + 1
+        node_token_ids_np[node_count] = token_id
+        node_depths_np[node_count] = depth
+        parents_np[current_index] = parent_index
+        child_maps.append(dict())
+        child_maps[parent_index][token_id] = current_index
+        node_count += 1
+
+        # Sibling: next-best child of the SAME parent (same table row).
+        if rank + 1 < topk:
+            sibling_logw = logw - float(vals[parent_row, rank]) + float(vals[parent_row, rank + 1])
+            tiebreak += 1
+            heapq.heappush(heap, (-sibling_logw, tiebreak, parent_index, depth, rank + 1, sibling_logw))
+
+        # Child: this node's own best child, via its precomputed table row.
+        if depth < depth_limit:
+            row = child_row(depth, slot)
+            node_rows[current_index] = row
+            child_logw = logw + float(vals[row, 0])
+            tiebreak += 1
+            heapq.heappush(heap, (-child_logw, tiebreak, current_index, depth + 1, 0, child_logw))
+    build_subtimes["tree_build_heap"] = time.perf_counter() - heap_start
+
+    # --- Visibility (tree_build_visibility) --------------------------------------
+    visibility_start = time.perf_counter()
+    current_length = 1 + node_count
+    visibility_np = np.zeros((current_length, current_length), dtype=np.bool_)
+    visibility_np[0, 0] = True
+    for index in range(1, current_length):
+        parent_index = int(parents_np[index])
+        visibility_np[index, :index] = visibility_np[parent_index, :index]
+        visibility_np[index, index] = True
+    build_subtimes["tree_build_visibility"] = time.perf_counter() - visibility_start
+
+    node_token_ids = torch.from_numpy(node_token_ids_np[:node_count])
+    node_depths = torch.from_numpy(node_depths_np[:node_count])
+    visibility = torch.from_numpy(visibility_np)
+    parents = parents_np[:current_length].tolist()
+
+    return node_token_ids, node_depths, parents, child_maps, visibility, build_subtimes
+
+
 def build_beam_tree(
     base_logits: torch.Tensor,
     markov_head,
@@ -426,6 +768,14 @@ def sparked_tree_generate(
     tree_mode:
       "best-first" - the naive per-node builder (build_sparked_tree), adaptive
                      budget allocation, ~budget markov reruns per round.
+      "best-first-fast" - same adaptive builder (build_sparked_tree_fast) but with
+                     the beam builder's candidate-union restriction: top-k on GPU,
+                     one active-slice CPU transfer, per-pop compute on ~C columns.
+                     beam_candidates=0 makes it identical to "best-first".
+      "best-first-precompute" - same strict best-first pop order (build_sparked_tree_
+                     precompute), but the whole [L-1, C, C] transition stack is one
+                     batched GPU matmul BEFORE the walk, so the heap walk is pure CPU.
+                     Isolates the per-pop `.expand` cost the fast builder still pays.
       "beam"       - level-synchronous builder (build_beam_tree): tree shape fixed
                      up front by `beam_schedule`, one batched expansion per depth.
     beam_schedule: width-schedule spec for tree_mode="beam"; see
@@ -443,8 +793,10 @@ def sparked_tree_generate(
     """
     if draft_mode not in ("dspark", "dflash"):
         raise ValueError(f"draft_mode must be 'dspark' or 'dflash', got {draft_mode!r}")
-    if tree_mode not in ("best-first", "beam"):
-        raise ValueError(f"tree_mode must be 'best-first' or 'beam', got {tree_mode!r}")
+    if tree_mode not in ("best-first", "best-first-fast", "best-first-precompute", "beam"):
+        raise ValueError(
+            f"tree_mode must be 'best-first', 'best-first-fast', 'best-first-precompute' "
+            f"or 'beam', got {tree_mode!r}")
     num_input_tokens = input_ids.shape[1]
     max_length = num_input_tokens + max_new_tokens
     # DSpark is next-token (block_size drafts, tree up to block_size deep); DFlash is
@@ -568,6 +920,22 @@ def sparked_tree_generate(
                 markov_head,
                 int(root_token[0, 0]),
                 beam_widths,
+                beam_candidates,
+            )
+        elif tree_mode == "best-first-fast":
+            node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree_fast(
+                base_draft_logits[0],
+                markov_head,
+                int(root_token[0, 0]),
+                tree_budget,
+                beam_candidates,
+            )
+        elif tree_mode == "best-first-precompute":
+            node_token_ids, node_depths, parents, child_maps, visibility_cpu, tree_build_subtimes = build_sparked_tree_precompute(
+                base_draft_logits[0],
+                markov_head,
+                int(root_token[0, 0]),
+                tree_budget,
                 beam_candidates,
             )
         else:

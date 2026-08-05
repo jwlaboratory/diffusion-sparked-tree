@@ -51,7 +51,10 @@ from metrics import PHASE_ORDER, sample_record, build_entry, build_timing_rollup
 # the fingerprint below folds this in, so old cache units are missed, not reused.
 # v2: passes interleaved per sample (v1's sequential passes had warm-state bias).
 # v3: sparked_tree gained tree_mode="beam" (+ Method.tree_kwargs pass-through).
-CODE_VERSION = "harness-3-beam"
+# v4: sparked_tree gained tree_mode="best-first-fast" (build_sparked_tree_fast).
+# v5: sparked_tree gained tree_mode="best-first-precompute" (build_sparked_tree_precompute).
+# v5-csweep: candidate-size (C) sweep over the fast + precompute builders (exp4/2-precompute/csweep).
+CODE_VERSION = "harness-5-csweep"
 
 DEFAULT_BACKBONES = [
     {"name": "dflash_b16", "model_id": "z-lab/Qwen3-4B-DFlash-b16", "kind": "dflash"},

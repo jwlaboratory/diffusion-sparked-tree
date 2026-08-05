@@ -1,0 +1,266 @@
+{
+  "config": {
+    "target": "Qwen/Qwen3-4B",
+    "tasks": [
+      [
+        "gsm8k",
+        1
+      ]
+    ],
+    "tree_budgets": [
+      64
+    ],
+    "passes": [
+      "clean",
+      "instrumented"
+    ],
+    "temperature": 0.0,
+    "max_new_tokens": 64,
+    "seed": 0,
+    "warmup_tokens": 32,
+    "discard_first_sample": true,
+    "gpu": "H100",
+    "cpu": 8,
+    "measure_corrector_fit": false,
+    "backbones": {
+      "dspark_b16": {
+        "model_id": "shreybirmiwal/Qwen3-4B-DSpark-b16",
+        "kind": "dspark",
+        "block_size": 16
+      }
+    },
+    "methods": {
+      "bestfirst.ref": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": null
+      },
+      "bestfirst.fast": {
+        "backbone": "dspark_b16",
+        "corrector": "dspark_b16_markov",
+        "verify": "tree",
+        "tree_kwargs": {
+          "tree_mode": "best-first-fast",
+          "beam_candidates": 2048
+        }
+      }
+    },
+    "phase_order": [
+      "draft_forward",
+      "candidate_build",
+      "candidate_pack",
+      "verify",
+      "walk_accept",
+      "kv_update",
+      "state_carry",
+      "unaccounted"
+    ],
+    "cpp_compact_live": true,
+    "code_version": "harness-4-fastbf",
+    "fingerprint": "233bd03e950e",
+    "metric": "decode timings (two-pass) + acceptance"
+  },
+  "results": {
+    "clean": {
+      "64": {
+        "gsm8k": {
+          "bestfirst.ref": {
+            "tps_decode": 34.90914645906355,
+            "ttft": 0.02119743000000085,
+            "output_tokens": 64,
+            "rounds": 7,
+            "decode_time": 1.8333304160000026,
+            "mean_accept": 9.142857142857142,
+            "budget_invariant": false
+          },
+          "bestfirst.fast": {
+            "tps_decode": 234.69059783223517,
+            "ttft": 0.02116990999999757,
+            "output_tokens": 64,
+            "rounds": 7,
+            "decode_time": 0.27269946300000214,
+            "mean_accept": 9.142857142857142,
+            "budget_invariant": false
+          }
+        }
+      }
+    },
+    "instrumented": {
+      "64": {
+        "gsm8k": {
+          "bestfirst.ref": {
+            "tps_decode": 34.75533542839074,
+            "ttft": 0.020726240999998424,
+            "output_tokens": 64,
+            "rounds": 7,
+            "decode_time": 1.8414438880000006,
+            "mean_accept": 9.142857142857142,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.031347306999997215,
+                "sec_per_token": 0.0004898016718749565,
+                "share": 0.017023221399400688
+              },
+              "candidate_build": {
+                "sec": 1.378448481999996,
+                "sec_per_token": 0.021538257531249938,
+                "share": 0.7485693650416545
+              },
+              "candidate_pack": {
+                "sec": 0.002286869000009517,
+                "sec_per_token": 3.5732328125148705e-05,
+                "share": 0.0012418890496268635
+              },
+              "verify": {
+                "sec": 0.14437137700002012,
+                "sec_per_token": 0.0022558027656253143,
+                "share": 0.07840118177959929
+              },
+              "walk_accept": {
+                "sec": 0.001160761000001287,
+                "sec_per_token": 1.8136890625020108e-05,
+                "share": 0.0006303537173006092
+              },
+              "kv_update": {
+                "sec": 0.007199430000007112,
+                "sec_per_token": 0.00011249109375011113,
+                "share": 0.003909665695991661
+              },
+              "state_carry": {
+                "sec": 0.00025589100000189546,
+                "sec_per_token": 3.998296875029617e-06,
+                "share": 0.0001389621490339408
+              },
+              "unaccounted": {
+                "sec": 0.0015417639999668609,
+                "sec_per_token": 2.40900624994822e-05,
+                "share": 0.0008372582026604008
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.6816674689999971,
+                "sec_per_token": 0.010651054203124954
+              },
+              "candidate_build.expand": {
+                "sec": 0.6848478759999921,
+                "sec_per_token": 0.010700748062499876
+              },
+              "candidate_build.visibility": {
+                "sec": 0.00041862700000905306,
+                "sec_per_token": 6.541046875141454e-06
+              }
+            },
+            "cold_round": {
+              "sec": 0.27483200700000054,
+              "share": 0.149248102964732
+            }
+          },
+          "bestfirst.fast": {
+            "tps_decode": 196.0512418763315,
+            "ttft": 0.019429981999998347,
+            "output_tokens": 64,
+            "rounds": 7,
+            "decode_time": 0.3264452669999969,
+            "mean_accept": 9.142857142857142,
+            "budget_invariant": false,
+            "phases": {
+              "draft_forward": {
+                "sec": 0.030647172999991312,
+                "sec_per_token": 0.00047886207812486425,
+                "share": 0.09388150510386051
+              },
+              "candidate_build": {
+                "sec": 0.10232682800000958,
+                "sec_per_token": 0.0015988566875001498,
+                "share": 0.313457839166682
+              },
+              "candidate_pack": {
+                "sec": 0.0014932330000121397,
+                "sec_per_token": 2.3331765625189682e-05,
+                "share": 0.004574221625985939
+              },
+              "verify": {
+                "sec": 0.13931021599999127,
+                "sec_per_token": 0.0021767221249998636,
+                "share": 0.42674907582591054
+              },
+              "walk_accept": {
+                "sec": 0.0009709450000059405,
+                "sec_per_token": 1.517101562509282e-05,
+                "share": 0.002974296453824677
+              },
+              "kv_update": {
+                "sec": 0.0071950029999996445,
+                "sec_per_token": 0.00011242192187499445,
+                "share": 0.022040457397716578
+              },
+              "state_carry": {
+                "sec": 0.0002407090000033918,
+                "sec_per_token": 3.7610781250529968e-06,
+                "share": 0.0007373640372105443
+              },
+              "unaccounted": {
+                "sec": 0.0013700419999835844,
+                "sec_per_token": 2.1406906249743507e-05,
+                "share": 0.004196850554992417
+              }
+            },
+            "subphases": {
+              "candidate_build.prep": {
+                "sec": 0.03795889300000255,
+                "sec_per_token": 0.0005931077031250398
+              },
+              "candidate_build.expand": {
+                "sec": 0.0524341040000067,
+                "sec_per_token": 0.0008192828750001047
+              },
+              "candidate_build.visibility": {
+                "sec": 0.00032569300001483725,
+                "sec_per_token": 5.088953125231832e-06
+              }
+            },
+            "cold_round": {
+              "sec": 0.042891118000000006,
+              "share": 0.13138838983381682
+            }
+          }
+        }
+      }
+    }
+  },
+  "timing": {
+    "64": {
+      "bestfirst.ref": {
+        "tps_clean": 34.90914645906355,
+        "tps_instrumented": 34.75533542839074,
+        "instrumentation_tax": 0.004406038138262125,
+        "dominant_phase": "candidate_build",
+        "dominant_share": 0.8798915026229116,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 34.90914645906355
+          }
+        }
+      },
+      "bestfirst.fast": {
+        "tps_clean": 234.69059783223517,
+        "tps_instrumented": 196.0512418763315,
+        "instrumentation_tax": 0.1646395565600136,
+        "dominant_phase": "verify",
+        "dominant_share": 0.4913002207560462,
+        "per_dataset": {
+          "gsm8k": {
+            "tps_clean": 234.69059783223517
+          }
+        }
+      }
+    }
+  },
+  "checks": {
+    "acceptance_match": true,
+    "mismatched_units": []
+  }
+}
