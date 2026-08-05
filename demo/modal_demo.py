@@ -14,11 +14,10 @@ import modal
 
 TARGET = "Qwen/Qwen3-4B"
 DSPARK_MODEL_ID = "shreybirmiwal/Qwen3-4B-DSpark-b16"
+DFLASH_MODEL_ID = "z-lab/Qwen3-4B-DFlash-b16"
 
-PROMPT = ("Janet's ducks lay 16 eggs per day. She eats three for breakfast every "
-          "morning and bakes muffins for her friends every day with four. She sells "
-          "the remainder at the farmers' market daily for $2 per fresh duck egg. "
-          "How much in dollars does she make every day at the farmers' market?")
+# Chat (alpaca-style) -- SparklingTree's best domain vs the field.
+PROMPT = "Give three tips for staying healthy, with a short explanation for each."
 
 MAX_NEW_TOKENS = 220
 BUDGET = 64          # final config
@@ -76,9 +75,10 @@ def run_demo() -> dict:
     sys.path.insert(0, "/root/harness/runner")
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from ddtree import maybe_enable_cpp_compact
+    from ddtree import maybe_enable_cpp_compact, ddtree_generate
     from timing import set_timing
     from autoregressive import autoregressive_generate
+    from dspark import dspark_generate
     from sparked_tree import sparked_tree_generate
     from backbones import load_backbones, build_correctors
 
@@ -89,11 +89,14 @@ def run_demo() -> dict:
         TARGET, attn_implementation="sdpa", dtype=torch.bfloat16).to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained(TARGET)
 
-    cfg = {"backbones": [{"name": "dspark_b16", "model_id": DSPARK_MODEL_ID, "kind": "dspark"}],
-           "target": TARGET}
+    cfg = {"backbones": [
+        {"name": "dspark_b16", "model_id": DSPARK_MODEL_ID, "kind": "dspark"},
+        {"name": "dflash_b16", "model_id": DFLASH_MODEL_ID, "kind": "dflash"},
+    ], "target": TARGET}
     backbones = load_backbones(cfg, target, device)
     correctors = build_correctors(backbones)
-    bb = backbones["dspark_b16"]
+    sp = backbones["dspark_b16"]
+    fl = backbones["dflash_b16"]
     head = correctors["dspark_b16_markov"]
 
     text = tokenizer.apply_chat_template(
@@ -102,39 +105,47 @@ def run_demo() -> dict:
     ids = tokenizer.encode(text, return_tensors="pt").to(device)
     eos = tokenizer.eos_token_id
 
-    def run_ar(inp, n):
-        return autoregressive_generate(target=target, input_ids=inp, max_new_tokens=n,
-                                       stop_token_ids=[eos], temperature=0.0)
-
-    def run_st(inp, n):
-        return sparked_tree_generate(
-            model=bb.model, target=target, input_ids=inp, mask_token_id=bb.model.mask_token_id,
-            block_size=bb.eff_block_size, tree_budget=BUDGET, markov_head=head,
+    runners = {
+        "ar": lambda inp, n: autoregressive_generate(
+            target=target, input_ids=inp, max_new_tokens=n,
+            stop_token_ids=[eos], temperature=0.0),
+        "dspark": lambda inp, n: dspark_generate(
+            model=sp.model, target=target, input_ids=inp, block_size=sp.eff_block_size,
+            confidence_threshold=0.0, max_new_tokens=n,
+            stop_token_ids=[eos], temperature=0.0),
+        "ddtree": lambda inp, n: ddtree_generate(
+            model=fl.model, target=target, input_ids=inp, mask_token_id=fl.model.mask_token_id,
+            block_size=fl.eff_block_size, tree_budget=BUDGET, max_new_tokens=n,
+            stop_token_ids=[eos], temperature=0.0),
+        "st": lambda inp, n: sparked_tree_generate(
+            model=sp.model, target=target, input_ids=inp, mask_token_id=sp.model.mask_token_id,
+            block_size=sp.eff_block_size, tree_budget=BUDGET, markov_head=head,
             draft_mode="dspark", tree_mode="best-first-precompute",
-            beam_candidates=C, max_fanout=K,
-            max_new_tokens=n, stop_token_ids=[eos], temperature=0.0)
+            beam_candidates=C, max_fanout=K, max_new_tokens=n,
+            stop_token_ids=[eos], temperature=0.0),
+    }
 
-    # Warm both paths (JIT, caches) before the recorded runs.
+    # Warm every path (JIT, caches) before the recorded runs.
     warm = tokenizer.encode("Warmup", return_tensors="pt").to(device)
-    run_ar(warm, 32); run_st(warm, 96)
+    for fn in runners.values():
+        fn(warm, 96)
     torch.cuda.synchronize()
-
-    ar = run_ar(ids, MAX_NEW_TOKENS)
-    st = run_st(ids, MAX_NEW_TOKENS)
-    n_in = int(ids.shape[1])
 
     def stats(r):
         toks = int(r.num_output_tokens) if hasattr(r, "num_output_tokens") else len(r.acceptance_lengths)
         t = float(r.total_decode_time)
         return {"tokens": toks, "seconds": t, "tps": toks / t}
 
+    n_in = int(ids.shape[1])
     out = {
         "prompt": PROMPT,
         "config": {"budget": BUDGET, "C": C, "K": K, "max_new_tokens": MAX_NEW_TOKENS,
                    "target": TARGET, "gpu": GPU},
-        "ar": {"checkpoints": _checkpoints(ar, tokenizer, n_in), **stats(ar)},
-        "st": {"checkpoints": _checkpoints(st, tokenizer, n_in), **stats(st)},
     }
+    for key, fn in runners.items():
+        r = fn(ids, MAX_NEW_TOKENS)
+        out[key] = {"checkpoints": _checkpoints(r, tokenizer, n_in), **stats(r)}
+        print(f"{key}: {out[key]['tokens']} tok in {out[key]['seconds']:.2f}s = {out[key]['tps']:.1f} tok/s")
     p = Path("/results/demo/demo.json")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out))
