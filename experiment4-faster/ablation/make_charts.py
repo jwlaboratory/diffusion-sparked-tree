@@ -165,12 +165,18 @@ def ladder_hero(res, budgets=None, suffix=""):
         vals = [agg(res, bk, a)[1] for a in ARMS]
         mults.append(vals[-1] / vals[0])
         for i, (a, v) in enumerate(zip(ARMS, vals)):
-            x = i + (j - 0.5) * width
+            x = i + (j - (len(budgets) - 1) / 2) * width
             bar = ax.bar(x, v, width * 0.92, color=shades[i], zorder=3)
             ax.bar_label(bar, labels=[f"{v:.0f}"], padding=2, fontsize=9)
+            if i > 0:
+                ax.text(x, v * 0.5, f"×{v / vals[i - 1]:.2f}", ha="center",
+                        va="center", color="white", fontsize=10,
+                        fontweight="bold", zorder=4)
     mtxt = " · ".join(f"×{m:.1f} (b{bk})" for m, bk in zip(mults, budgets))
     ax.text(0.03, 0.96, f"total: {mtxt} vs naive",
             transform=ax.transAxes, ha="left", va="top", fontsize=11, fontweight="bold")
+    ax.text(0.03, 0.90, "×N on each bar = speedup vs previous rung",
+            transform=ax.transAxes, ha="left", va="top", fontsize=9, color="#777777")
     ax.set_xticks(range(n))
     ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=10)
     ax.set_ylabel("decode tok/s (sync-on)")
@@ -179,12 +185,15 @@ def ladder_hero(res, budgets=None, suffix=""):
     title_m = "–".join(f"{m:.1f}" for m in sorted(mults))
     fig.suptitle(f"The speedup ladder: same trees, {title_m}× faster construction",
                  fontsize=14, fontweight="bold", x=0.02, ha="left")
-    group_note = ("per group: left bar = budget 64, right bar = budget 128  ·  "
-                  if len(budgets) > 1 else f"budget {budgets[0]}  ·  ")
-    fig.text(0.02, 0.015, group_note +
-             "acceptance identical across A1–A3 (bit-identical trees); A0 differs only by full-vocab candidates",
-             fontsize=8.5, color="#777777")
-    fig.tight_layout(rect=(0, 0.05, 1, 0.93))
+    if len(budgets) > 1:
+        fig.text(0.02, 0.015,
+                 "per group: left bar = budget 64, right bar = budget 128  ·  "
+                 "acceptance identical across A1–A3 (bit-identical trees); A0 differs only by full-vocab candidates",
+                 fontsize=8.5, color="#777777")
+        rect = (0, 0.05, 1, 0.93)
+    else:
+        rect = (0, 0, 1, 0.93)
+    fig.tight_layout(rect=rect)
     fig.savefig(OUT / f"ladder_overall{suffix}.png", dpi=160)
     plt.close(fig)
 
