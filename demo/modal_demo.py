@@ -16,10 +16,12 @@ TARGET = "Qwen/Qwen3-4B"
 DSPARK_MODEL_ID = "shreybirmiwal/Qwen3-4B-DSpark-b16"
 DFLASH_MODEL_ID = "z-lab/Qwen3-4B-DFlash-b16"
 
-# Chat (alpaca-style) -- SparklingTree's best domain vs the field.
-PROMPT = "Give three tips for staying healthy, with a short explanation for each."
+# Chat (alpaca-style) -- SparklingTree's best domain vs the field. Long-form
+# instruction so the four methods spread out visibly.
+PROMPT = ("Write a detailed one-week healthy living plan: for each day give a "
+          "meal idea and one exercise, with a short explanation of why it helps.")
 
-MAX_NEW_TOKENS = 220
+MAX_NEW_TOKENS = 450
 BUDGET = 64          # final config
 C = 128
 K = 64
